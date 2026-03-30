@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="description" content="VIBMON — Monitor de Vibraciones Industrial"/>
+<meta name="theme-color" content="#05080f"/>
+<title>VIBMON — Monitor de Vibraciones</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>"/>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/css/app.css"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="loading-logo">⚡ VIBMON</div>
+  <div class="loading-bar"><div class="loading-bar-inner"></div></div>
+</div>
+
+<!-- LOGIN -->
+<div id="login-screen" style="display:none">
+  <div class="lbox">
+    <div class="llogo">⚡ VIBMON</div>
+    <div class="lsub">Monitor de Vibraciones Industrial</div>
+    <div class="login-panel">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px;margin-bottom:10px">ACCESO ADMINISTRADOR</div>
+      <label class="lbl">Usuario</label>
+      <input id="l-user" type="text" placeholder="usuario" autocomplete="username"/>
+      <label class="lbl">Contraseña</label>
+      <input id="l-pass" type="password" placeholder="••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/>
+      <div id="lerr"></div>
+      <button id="btn-login" class="btn bp" style="width:100%;margin-top:14px" onclick="doLogin()">Entrar como administrador</button>
+    </div>
+    <div class="vlink" onclick="enterViewer()">👁 Entrar solo para ver (sin cuenta) →</div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="hdr" style="display:none">
+  <div class="logo">⚡ VIBMON<small>Monitor Industrial de Vibraciones</small></div>
+  <div id="hdr-r">
+    <div class="dot"></div>
+    <span id="ubadge"></span>
+    <button class="btn bg sm" id="btn-exp" onclick="exportData()">↓ Export</button>
+    <button class="btn bg sm" id="btn-imp" onclick="importData()">↑ Import</button>
+    <button class="btn bg sm" id="btn-cfg" onclick="openModal('mcfg')">⚙</button>
+    <button class="btn bg sm" onclick="logout()">Salir</button>
+  </div>
+</div>
+
+<div id="app-content" style="display:none">
+  <div id="breadcrumb"></div>
+
+  <!-- ZONES VIEW -->
+  <div id="v-zones" class="view active">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:20px;font-weight:700;color:#f1f5f9">Panel de Zonas</div>
+        <div style="font-size:12px;color:var(--tx2);margin-top:2px">Selecciona una zona para ver su maquinaria</div>
+      </div>
+      <button class="btn bp sm" id="btn-add-zone" onclick="openZoneModal()" style="display:none">+ Nueva zona</button>
+    </div>
+    <div class="g3" style="margin-bottom:16px" id="gkpis"></div>
+    <div class="g4" id="zone-grid"></div>
+    <div id="alrt-sec" style="display:none;margin-top:16px">
+      <div class="card"><div class="card-title">⚠ Alertas recientes</div><div id="alrt-list"></div></div>
+    </div>
+  </div>
+
+  <!-- ZONE MACHINES -->
+  <div id="v-zone" class="view">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:20px;font-weight:700;color:#f1f5f9" id="zone-title"></div>
+        <div style="font-size:12px;color:var(--tx2);margin-top:2px" id="zone-desc"></div>
+      </div>
+      <div class="row">
+        <button class="btn bw sm" id="btn-edit-zone" onclick="openZoneModal(S.curZone)" style="display:none">✏ Editar zona</button>
+        <button class="btn bp sm" id="btn-add-mac" onclick="openAddMachine()" style="display:none">+ Añadir máquina</button>
+      </div>
+    </div>
+    <div class="g4" id="mac-grid"></div>
+  </div>
+
+  <!-- MACHINE -->
+  <div id="v-machine" class="view">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:18px;font-weight:700;color:#f1f5f9" id="mac-title"></div>
+      <div class="row" id="mac-actions"></div>
+    </div>
+    <div class="card" id="mac-info"></div>
+    <div class="g3" id="mac-kpis" style="margin-bottom:13px"></div>
+    <div class="ctabs" id="comp-tabs"></div>
+    <div id="comp-panels"></div>
+  </div>
+
+  <!-- MEASUREMENT DETAIL -->
+  <div id="v-meas" class="view">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:13px;flex-wrap:wrap">
+      <button class="btn bg sm" id="back-meas">← Volver</button>
+      <div style="font-size:15px;font-weight:700;color:#f1f5f9;flex:1" id="md-title"></div>
+      <button class="btn bd sm" id="btn-del-meas" style="display:none" onclick="deleteMeas()">🗑 Eliminar</button>
+    </div>
+    <div id="md-content"></div>
+  </div>
+</div>
+
+<!-- MODALS -->
+
+<!-- CONFIG -->
+<div class="mov" id="mcfg">
+  <div class="mbox" style="max-width:420px">
+    <div class="mtitle">⚙ CONFIGURACIÓN <button class="btn bg xs" onclick="closeModal('mcfg')">✕</button></div>
+    <label class="lbl">Contraseña actual *</label><input id="cp-old" type="password" placeholder="Contraseña actual"/>
+    <label class="lbl">Nueva contraseña</label><input id="cp-new" type="password" placeholder="Mínimo 4 caracteres"/>
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn bp" onclick="saveCFG()">💾 Cambiar contraseña</button>
+      <button class="btn bg" onclick="closeModal('mcfg')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ZONE -->
+<div class="mov" id="mzone">
+  <div class="mbox" style="max-width:420px">
+    <div class="mtitle" id="mzone-title">+ NUEVA ZONA <button class="btn bg xs" onclick="closeModal('mzone')">✕</button></div>
+    <label class="lbl">Nombre *</label><input id="zn" placeholder="Ej: Sala de bombas, Línea 1"/>
+    <label class="lbl">Descripción</label><input id="zd" placeholder="Descripción breve"/>
+    <label class="lbl">Icono (emoji)</label><input id="zi" placeholder="🏭" style="font-size:20px;text-align:center" maxlength="4"/>
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bp" onclick="saveZone()">💾 Guardar zona</button>
+      <button class="btn bg" onclick="closeModal('mzone')">Cancelar</button>
+      <button class="btn bd sm" id="zdel" style="display:none;margin-left:auto" onclick="deleteZone()">🗑 Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MACHINE -->
+<div class="mov" id="mmac">
+  <div class="mbox" style="max-width:580px">
+    <div class="mtitle" id="mmac-title">+ NUEVA MÁQUINA <button class="btn bg xs" onclick="closeModal('mmac')">✕</button></div>
+    <label class="lbl">Nombre *</label><input id="mn" placeholder="Ej: Cinta 01, Bomba P-101"/>
+    <div class="g2">
+      <div><label class="lbl">Tipo</label>
+        <select id="mt"><option value="">— Seleccionar —</option>
+          <option>Cinta transportadora</option><option>Motor eléctrico</option><option>Bomba</option>
+          <option>Compresor</option><option>Ventilador</option><option>Reductor</option>
+          <option>Turbina</option><option>Agitador</option><option>Otro</option></select>
+      </div>
+      <div><label class="lbl">RPM nominales</label><input id="mr" type="number" placeholder="1500"/></div>
+    </div>
+    <label class="lbl">Notas</label>
+    <textarea id="mno" placeholder="Potencia, modelo, rodamientos instalados..." style="min-height:50px"></textarea>
+    <div style="margin-top:14px">
+      <label class="lbl" style="margin-top:0">Componentes a monitorear</label>
+      <div style="font-size:11px;color:var(--tx2);margin-bottom:8px">Selecciona predefinidos y/o añade los tuyos</div>
+      <div id="predef-chips"></div>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <input id="mc-inp" placeholder="Componente personalizado..." onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomComp()}"/>
+        <button class="btn bg sm" onclick="addCustomComp()">+ Añadir</button>
+      </div>
+      <div id="mc-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bp" onclick="saveMachine()">💾 Guardar máquina</button>
+      <button class="btn bg" onclick="closeModal('mmac')">Cancelar</button>
+      <button class="btn bd sm" id="mdel" style="display:none;margin-left:auto" onclick="deleteMachine()">🗑 Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="mov" id="mlb" onclick="if(event.target===this)closeModal('mlb')">
+  <div style="position:relative;max-width:94vw">
+    <button class="btn bg sm" style="position:absolute;top:-40px;right:0" onclick="closeModal('mlb')">✕ Cerrar</button>
+    <img id="lb-img" src="" alt="" style="max-width:100%;max-height:86vh;border-radius:8px;border:1px solid var(--br)"/>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/app.js"></script>
+<script>
+// Export/Import wrappers (placeholder for full implementation)
+function exportData() { window.open('/api/zones', '_blank'); toast('Usa la API /api/zones para exportar datos completos','info'); }
+function importData() { toast('Importación disponible via API REST','info'); }
+</script>
+</body>
+</html>
