@@ -927,155 +927,279 @@ async function openMeasFromZone(measId, macId, compId) {
   }
 }
 
-// ── BULK IMPORT ───────────────────────────────────────────────────────────────
-let bulkFiles = [], bulkPairs = [];
+// ── BULK IMPORT (MULTI-FOLDER WITH VISUAL ASSIGNMENT) ────────────────────────
+const COMP_OPTIONS = [
+  '— Saltar —',
+  'Motor libre','Motor acoplado',
+  'Reductor entrada','Reductor salida',
+  'Rodamiento acoplado','Rodamiento libre',
+  'Rodamiento cola 01','Rodamiento cola 02',
+  'Chumacera intermedia','Acoplamiento','Ventilador','Bomba','Compresor'
+];
+
+let biFolders = [];       // [{folderName, files:[]}]
+let biCurrentIdx = 0;     // current machine index
+let biConfirmed = [];     // [{folderName, machineName, pairs:[{valImg,specImg,compName,date}]}]
+let biZoneId = '';
 
 function openBulkImport() {
   resetBulk();
-  // Populate zones
   const zSel = document.getElementById('bi-zone');
   zSel.innerHTML = '<option value="">— Seleccionar zona —</option>' +
     S.zones.map(z => `<option value="${z.id}">${z.name}</option>`).join('');
-  document.getElementById('bi-machine').innerHTML = '<option value="">— Seleccionar máquina —</option>';
-  document.getElementById('bi-comp').innerHTML = '<option value="">— Seleccionar componente —</option>';
+  document.getElementById('bi-step1').style.display = 'block';
+  document.getElementById('bi-step2').style.display = 'none';
+  document.getElementById('bi-step3').style.display = 'none';
+  document.getElementById('bi-progress').style.display = 'none';
+  document.getElementById('bi-start').style.display = 'none';
   openModal('mbulk');
 }
 
 function resetBulk() {
-  bulkFiles = []; bulkPairs = [];
-  document.getElementById('bi-preview').style.display = 'none';
-  document.getElementById('bi-progress').style.display = 'none';
-  document.getElementById('bi-start').disabled = true;
-  document.getElementById('bi-bar').style.width = '0%';
-  document.getElementById('bi-status').textContent = '';
+  biFolders = []; biCurrentIdx = 0; biConfirmed = []; biZoneId = '';
+  const bar = document.getElementById('bi-bar');
+  if(bar) bar.style.width = '0%';
 }
 
-async function loadBulkMachines() {
-  const zid = document.getElementById('bi-zone').value;
-  if(!zid) return;
-  const machines = await API.get('/zones/' + zid + '/machines');
-  document.getElementById('bi-machine').innerHTML = '<option value="">— Seleccionar máquina —</option>' +
-    machines.map(m => `<option value="${m.id}" data-comps='${JSON.stringify(m.components)}'>${m.name}</option>`).join('');
-  document.getElementById('bi-comp').innerHTML = '<option value="">— Seleccionar componente —</option>';
-}
+function handleFolderSelect(evt) {
+  biZoneId = document.getElementById('bi-zone').value;
+  if(!biZoneId) { toast('Selecciona la zona primero','err'); evt.target.value=''; return; }
 
-function loadBulkComponents() {
-  const sel = document.getElementById('bi-machine');
-  const opt = sel.options[sel.selectedIndex];
-  if(!opt || !opt.value) return;
-  const comps = JSON.parse(opt.dataset.comps || '[]');
-  document.getElementById('bi-comp').innerHTML = '<option value="">— Seleccionar componente —</option>' +
-    comps.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-}
+  const files = Array.from(evt.target.files);
+  if(!files.length) return;
 
-function handleBulkFiles(evt) {
-  bulkFiles = Array.from(evt.target.files);
-  // Sort by filename (date is in the name)
-  bulkFiles.sort((a, b) => a.name.localeCompare(b.name));
-  
-  // Pair files: odd index = values screenshot, even index = spectrum
-  bulkPairs = [];
-  for(let i = 0; i < bulkFiles.length; i += 2) {
-    const valImg = bulkFiles[i];
-    const specImg = bulkFiles[i+1] || null;
-    // Extract date from filename: Screenshot_20260330_072151 -> 2026-03-30
-    const dateMatch = valImg.name.match(/(\d{4})(\d{2})(\d{2})/);
-    const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : new Date().toISOString().slice(0,10);
-    bulkPairs.push({ valImg, specImg, date, index: (i/2)+1 });
-  }
+  // Group by immediate subfolder
+  const folders = {};
+  files.forEach(f => {
+    const parts = f.webkitRelativePath.split('/');
+    const key = parts.length >= 3 ? parts[1] : parts[0];
+    if(!folders[key]) folders[key] = [];
+    if(f.type.startsWith('image/')) folders[key].push(f);
+  });
 
-  // Show preview
-  document.getElementById('bi-preview').style.display = 'block';
-  document.getElementById('bi-pairs').innerHTML = bulkPairs.map(p => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid var(--br2)">
-      <span style="font-family:var(--mono);font-size:10px;color:var(--tx2);width:24px">${p.index}</span>
-      <img src="${URL.createObjectURL(p.valImg)}" style="width:60px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--br)"/>
-      ${p.specImg ? `<img src="${URL.createObjectURL(p.specImg)}" style="width:60px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--br)"/>` : '<span style="font-size:10px;color:var(--tx3)">Sin espectro</span>'}
-      <span style="font-family:var(--mono);font-size:11px;color:var(--ac)">${p.date}</span>
-    </div>`).join('');
+  biFolders = Object.entries(folders)
+    .map(([name, fls]) => ({ folderName: name, files: fls.sort((a,b) => a.name.localeCompare(b.name)) }))
+    .filter(f => f.files.length >= 1);
 
-  document.getElementById('bi-start').disabled = 
-    !document.getElementById('bi-comp').value || bulkPairs.length === 0;
+  if(!biFolders.length) { toast('No se encontraron imágenes en las subcarpetas','err'); return; }
+
+  biCurrentIdx = 0;
+  document.getElementById('bi-step1').style.display = 'none';
+  document.getElementById('bi-step2').style.display = 'block';
+  renderBiCurrentMachine();
   evt.target.value = '';
 }
 
-async function startBulkImport() {
-  const compId = document.getElementById('bi-comp').value;
-  const machSel = document.getElementById('bi-machine');
-  const machId = machSel.value;
-  if(!compId || !machId || !bulkPairs.length) { toast('Selecciona zona, máquina, componente e imágenes', 'err'); return; }
+function renderBiCurrentMachine() {
+  const fd = biFolders[biCurrentIdx];
+  if(!fd) return;
 
-  document.getElementById('bi-start').disabled = true;
+  document.getElementById('bi-machine-title').innerHTML =
+    `🔧 <b>${fd.folderName}</b> <span style="font-size:12px;color:var(--tx2)">(${fd.files.length} imágenes · ${Math.ceil(fd.files.length/2)} pares)</span>`;
+  document.getElementById('bi-mac-counter').textContent = `${biCurrentIdx+1}/${biFolders.length}`;
+  document.getElementById('bi-prev').disabled = biCurrentIdx === 0;
+  document.getElementById('bi-next').disabled = biCurrentIdx === biFolders.length - 1;
+
+  // Auto-assign components in order (skipping if already confirmed)
+  const existing = biConfirmed.find(c => c.folderName === fd.folderName);
+  const files = fd.files;
+  const pairs = [];
+  for(let i=0; i<files.length; i+=2) {
+    pairs.push({ valImg: files[i], specImg: files[i+1]||null });
+  }
+
+  // Default component order
+  const defaultComps = [
+    'Motor libre','Motor acoplado',
+    'Reductor entrada','Reductor salida',
+    'Rodamiento acoplado','Rodamiento libre',
+    'Rodamiento cola 01','Rodamiento cola 02'
+  ];
+
+  const container = document.getElementById('bi-pairs-container');
+  container.innerHTML = pairs.map((pair, i) => {
+    const previewUrl = URL.createObjectURL(pair.valImg);
+    const specUrl = pair.specImg ? URL.createObjectURL(pair.specImg) : null;
+    const dateMatch = pair.valImg.name.match(/(\d{4})(\d{2})(\d{2})/);
+    const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : new Date().toISOString().slice(0,10);
+    const defaultComp = existing?.pairs?.[i]?.compName || defaultComps[i] || '— Saltar —';
+
+    return `<div style="display:grid;grid-template-columns:80px 80px 1fr;gap:10px;align-items:center;padding:10px;border-bottom:1px solid var(--br2);border-radius:6px;margin-bottom:4px;background:var(--s2)" id="bi-pair-row-${i}">
+      <div>
+        <img src="${previewUrl}" style="width:76px;height:56px;object-fit:cover;border-radius:4px;border:1px solid var(--br);cursor:pointer" onclick="openLB('${previewUrl}')"/>
+        <div style="font-size:9px;color:var(--tx2);margin-top:2px;text-align:center">${date}</div>
+      </div>
+      <div>
+        ${specUrl ? `<img src="${specUrl}" style="width:76px;height:56px;object-fit:cover;border-radius:4px;border:1px solid var(--br);cursor:pointer" onclick="openLB('${specUrl}')"/>` 
+          : `<div style="width:76px;height:56px;border-radius:4px;border:1px dashed var(--br);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--tx3)">Sin espectro</div>`}
+        <div style="font-size:9px;color:var(--tx2);margin-top:2px;text-align:center">Par ${i+1}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--tx2);margin-bottom:4px;font-family:var(--mono)">COMPONENTE</div>
+        <select id="bi-comp-${i}" style="background:var(--bg);border:1px solid var(--br);border-radius:6px;padding:6px 8px;color:var(--tx);font-size:12px;width:100%">
+          ${COMP_OPTIONS.map(c => `<option value="${c}" ${c===defaultComp?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function biPrevMachine() { if(biCurrentIdx>0){ biCurrentIdx--; renderBiCurrentMachine(); } }
+function biNextMachine() { if(biCurrentIdx<biFolders.length-1){ biCurrentIdx++; renderBiCurrentMachine(); } }
+
+function biConfirmMachine() {
+  const fd = biFolders[biCurrentIdx];
+  const files = fd.files;
+  const pairs = [];
+  for(let i=0; i<files.length; i+=2) {
+    const compName = document.getElementById('bi-comp-'+Math.floor(i/2))?.value || '— Saltar —';
+    if(compName === '— Saltar —') continue;
+    const dateMatch = files[i].name.match(/(\d{4})(\d{2})(\d{2})/);
+    const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : new Date().toISOString().slice(0,10);
+    pairs.push({ valImg: files[i], specImg: files[i+1]||null, compName, date });
+  }
+
+  // Remove existing entry and add new
+  biConfirmed = biConfirmed.filter(c => c.folderName !== fd.folderName);
+  if(pairs.length > 0) biConfirmed.push({ folderName: fd.folderName, pairs });
+
+  toast(`✓ ${fd.folderName} confirmada (${pairs.length} mediciones)`, 'ok');
+
+  // Go to next or show summary
+  if(biCurrentIdx < biFolders.length-1) {
+    biCurrentIdx++;
+    renderBiCurrentMachine();
+  } else {
+    showBiSummary();
+  }
+}
+
+function biSkipMachine() {
+  biConfirmed = biConfirmed.filter(c => c.folderName !== biFolders[biCurrentIdx].folderName);
+  if(biCurrentIdx < biFolders.length-1) { biCurrentIdx++; renderBiCurrentMachine(); }
+  else showBiSummary();
+}
+
+function showBiSummary() {
+  document.getElementById('bi-step2').style.display = 'none';
+  document.getElementById('bi-step3').style.display = 'block';
+  document.getElementById('bi-start').style.display = '';
+
+  const totalMeas = biConfirmed.reduce((a,m) => a+m.pairs.length, 0);
+  document.getElementById('bi-summary-count').textContent =
+    `${biConfirmed.length} máquinas · ${totalMeas} mediciones totales`;
+
+  document.getElementById('bi-summary').innerHTML = biConfirmed.map(m => `
+    <div style="margin-bottom:10px">
+      <div style="font-weight:700;color:#f1f5f9;font-size:13px">🔧 ${m.folderName}</div>
+      ${m.pairs.map(p => `<div style="font-size:11px;color:var(--tx2);padding-left:16px">
+        · ${p.compName} — ${p.date}
+      </div>`).join('')}
+    </div>`).join('');
+}
+
+async function startMultiFolderImport() {
+  if(!biConfirmed.length) { toast('No hay máquinas confirmadas','err'); return; }
+  document.getElementById('bi-start').style.display = 'none';
+  document.getElementById('bi-step3').style.display = 'none';
   document.getElementById('bi-progress').style.display = 'block';
 
-  let done = 0;
-  for(const pair of bulkPairs) {
-    try {
-      document.getElementById('bi-status').textContent = `Procesando medición ${pair.index} de ${bulkPairs.length}...`;
-      document.getElementById('bi-bar').style.width = Math.round((done/bulkPairs.length)*100) + '%';
+  const bar = document.getElementById('bi-bar');
+  const status = document.getElementById('bi-status');
+  const log = document.getElementById('bi-log');
+  log.innerHTML = '';
+  const addLog = (msg, col='var(--tx2)') => { log.innerHTML += `<div style="color:${col}">${msg}</div>`; log.scrollTop=log.scrollHeight; };
 
-      // Convert images to base64 for AI analysis
-      const toBase64 = file => new Promise((res, rej) => {
-        const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file);
-      });
+  let zoneMachines = await API.get('/zones/'+biZoneId+'/machines');
+  let totalMeas=0, totalMacCreated=0;
+  const totalPairs = biConfirmed.reduce((a,m)=>a+m.pairs.length,0);
+  let done=0;
 
-      const valB64 = await toBase64(pair.valImg);
-      const specB64 = pair.specImg ? await toBase64(pair.specImg) : null;
-      const images = specB64 ? [valB64, specB64] : [valB64];
+  for(const macData of biConfirmed) {
+    addLog(`\n📁 ${macData.folderName}`);
 
-      // Use AI to extract values
-      let vx='', vy='', vz='', temp='', severity='normal', fault='';
-      if(process?.env?.ANTHROPIC_API_KEY || true) {
+    // Find or create machine
+    let mac = zoneMachines.find(m =>
+      m.name.toLowerCase() === macData.folderName.toLowerCase() ||
+      m.name.toLowerCase().replace(/[\s-]/g,'') === macData.folderName.toLowerCase().replace(/[\s-]/g,'')
+    );
+
+    if(!mac) {
+      // Get unique component names from this machine's pairs
+      const uniqueComps = [...new Set(macData.pairs.map(p=>p.compName))];
+      // Add all standard components
+      const allComps = [...new Set([...COMP_OPTIONS.slice(1), ...uniqueComps])].map(n=>({name:n}));
+      try {
+        mac = await API.post('/zones/'+biZoneId+'/machines', { name: macData.folderName, components: allComps });
+        zoneMachines.push(mac);
+        totalMacCreated++;
+        addLog(`  ✅ Máquina creada`, 'var(--gr)');
+      } catch(e) { addLog(`  ❌ Error: ${e.message}`, 'var(--rd)'); continue; }
+    } else {
+      addLog(`  🔍 Encontrada: ${mac.name}`);
+    }
+
+    // Process each pair
+    for(const pair of macData.pairs) {
+      done++;
+      bar.style.width = Math.round((done/totalPairs)*100)+'%';
+      status.textContent = `${macData.folderName} › ${pair.compName} (${done}/${totalPairs})`;
+
+      // Find component
+      const comp = mac.components?.find(c => c.name === pair.compName);
+      if(!comp) { addLog(`  ⚠️ Componente no encontrado: ${pair.compName}`, 'var(--yw)'); continue; }
+
+      try {
+        // Convert to base64 for AI
+        const toB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(f);});
+        const imgs = [await toB64(pair.valImg)];
+        if(pair.specImg) imgs.push(await toB64(pair.specImg));
+
+        // AI analysis
+        let vx='',vy='',vz='',temp='',severity='normal',fault='',aiResult='';
         try {
-          const aiRes = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API._token },
-            body: JSON.stringify({ images, machineName: machSel.options[machSel.selectedIndex]?.text, compName: document.getElementById('bi-comp').options[document.getElementById('bi-comp').selectedIndex]?.text })
-          });
+          const aiRes = await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API._token},
+            body:JSON.stringify({images:imgs,machineName:mac.name,compName:pair.compName})});
           const ai = await aiRes.json();
           if(!ai.error) {
-            if(ai.vxDetectado && ai.vxDetectado !== 'null') vx = parseFloat(ai.vxDetectado).toFixed(2);
-            if(ai.vyDetectado && ai.vyDetectado !== 'null') vy = parseFloat(ai.vyDetectado).toFixed(2);
-            if(ai.vzDetectado && ai.vzDetectado !== 'null') vz = parseFloat(ai.vzDetectado).toFixed(2);
-            if(ai.temperaturaDetectada && ai.temperaturaDetectada !== 'null') temp = parseFloat(ai.temperaturaDetectada).toFixed(1);
-            if(ai.severidadSugerida) severity = ai.severidadSugerida;
-            if(ai.tipoFalla) fault = ai.tipoFalla;
+            if(ai.vxDetectado&&ai.vxDetectado!=='null') vx=parseFloat(ai.vxDetectado).toFixed(2);
+            if(ai.vyDetectado&&ai.vyDetectado!=='null') vy=parseFloat(ai.vyDetectado).toFixed(2);
+            if(ai.vzDetectado&&ai.vzDetectado!=='null') vz=parseFloat(ai.vzDetectado).toFixed(2);
+            if(ai.temperaturaDetectada&&ai.temperaturaDetectada!=='null') temp=parseFloat(ai.temperaturaDetectada).toFixed(1);
+            if(ai.severidadSugerida) severity=ai.severidadSugerida;
+            if(ai.tipoFalla) fault=ai.tipoFalla;
+            if(ai.diagnostico) aiResult=`Diagnóstico: ${ai.diagnostico}\nFalla: ${ai.tipoFalla}\nSeveridad: ${severity.toUpperCase()}\n\n${ai.explicacion}\n\nAcción: ${ai.accionRecomendada}`;
           }
         } catch(e) { /* continue without AI */ }
+
+        const fd2 = new FormData();
+        fd2.append('machine_id',mac.id);
+        fd2.append('date',pair.date);
+        fd2.append('vx',vx);fd2.append('vy',vy);fd2.append('vz',vz);
+        fd2.append('temperature',temp);
+        fd2.append('severity',severity);
+        fd2.append('fault_type',fault);
+        fd2.append('notes','Importación masiva');
+        fd2.append('ai_result',aiResult);
+        fd2.append('images',pair.valImg);
+        if(pair.specImg) fd2.append('images',pair.specImg);
+
+        await API.postForm('/components/'+comp.id+'/measurements', fd2);
+        totalMeas++;
+        const sevIcon = severity==='critico'?'🔴':severity==='alerta'?'🟡':'🟢';
+        addLog(`  ${sevIcon} ${pair.compName} ${pair.date} X:${vx||'—'} Y:${vy||'—'} Z:${vz||'—'}`, 'var(--gr)');
+      } catch(e) {
+        addLog(`  ❌ ${pair.compName}: ${e.message}`, 'var(--rd)');
       }
-
-      // Save measurement with images
-      const fd = new FormData();
-      fd.append('machine_id', machId);
-      fd.append('date', pair.date);
-      fd.append('vx', vx); fd.append('vy', vy); fd.append('vz', vz);
-      fd.append('temperature', temp);
-      fd.append('severity', severity);
-      fd.append('fault_type', fault);
-      fd.append('notes', 'Importación masiva - ' + pair.valImg.name);
-      fd.append('images', pair.valImg);
-      if(pair.specImg) fd.append('images', pair.specImg);
-
-      await API.postForm('/components/' + compId + '/measurements', fd);
-      done++;
-    } catch(e) {
-      console.error('Error en medición ' + pair.index + ':', e);
-      done++;
     }
   }
 
-  document.getElementById('bi-bar').style.width = '100%';
-  document.getElementById('bi-status').textContent = `✓ ${done} mediciones importadas correctamente`;
-  document.getElementById('bi-start').disabled = false;
-  toast(`✓ ${done} mediciones importadas`, 'ok', 5000);
-  
-  // Refresh if we're viewing this machine
-  if(S.curMachine?.id === machId) {
-    S.measurements = await API.get('/components/' + compId + '/measurements');
-    renderHistory(compId);
-    renderCompCharts(compId);
-    updateMacKPIs();
-  }
+  bar.style.width = '100%';
+  status.textContent = `✅ Completado: ${totalMacCreated} máquinas creadas · ${totalMeas} mediciones guardadas`;
+  addLog(`\n🎉 FINALIZADO: ${totalMacCreated} máquinas nuevas · ${totalMeas} mediciones`, 'var(--ac)');
+  toast(`✅ ${totalMeas} mediciones importadas`, 'ok', 6000);
+  document.getElementById('bi-start').style.display = '';
+  goZones();
 }
 
 // ── EDIT MEASUREMENT ──────────────────────────────────────────────────────────

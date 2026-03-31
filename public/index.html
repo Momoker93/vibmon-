@@ -199,55 +199,71 @@
 
 <!-- BULK IMPORT MODAL -->
 <div class="mov" id="mbulk">
-  <div class="mbox" style="max-width:640px">
-    <div class="mtitle">📦 IMPORTACIÓN MASIVA <button class="btn bg xs" onclick="closeModal('mbulk')">✕</button></div>
-    
-    <div style="background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15);border-radius:8px;padding:14px;margin-bottom:14px;font-size:12px;color:var(--tx2);line-height:1.7">
-      <b style="color:var(--ac)">¿Cómo funciona?</b><br>
-      1. Selecciona la máquina y el componente<br>
-      2. Arrastra <b>todas las imágenes</b> de la carpeta de esa máquina<br>
-      3. Las imágenes se emparejan automáticamente (valores + espectro)<br>
-      4. La IA extrae los datos de cada medición y los guarda todas a la vez
-    </div>
+  <div class="mbox" style="max-width:780px">
+    <div class="mtitle">📦 IMPORTACIÓN MASIVA <button class="btn bg xs" onclick="closeModal('mbulk');resetBulk()">✕</button></div>
 
-    <label class="lbl">Zona</label>
-    <select id="bi-zone" onchange="loadBulkMachines()">
-      <option value="">— Seleccionar zona —</option>
-    </select>
-
-    <label class="lbl">Máquina</label>
-    <select id="bi-machine" onchange="loadBulkComponents()">
-      <option value="">— Seleccionar máquina —</option>
-    </select>
-
-    <label class="lbl">Componente</label>
-    <select id="bi-comp">
-      <option value="">— Seleccionar componente —</option>
-    </select>
-
-    <label class="lbl">Imágenes de la carpeta (todas a la vez)</label>
-    <div class="upz" onclick="document.getElementById('bi-files').click()" id="bi-dropzone">
-      <div style="font-size:28px">📂</div>
-      <p>Haz clic o arrastra aquí <b>todas las imágenes</b> de la carpeta de esta máquina</p>
-      <p style="font-size:10px;margin-top:4px;color:var(--tx3)">Se ordenarán automáticamente por nombre/fecha</p>
-    </div>
-    <input type="file" id="bi-files" accept="image/*" multiple style="display:none" onchange="handleBulkFiles(event)"/>
-    
-    <div id="bi-preview" style="display:none;margin-top:12px">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px;margin-bottom:8px">MEDICIONES DETECTADAS</div>
-      <div id="bi-pairs" style="max-height:200px;overflow-y:auto"></div>
-    </div>
-
-    <div id="bi-progress" style="display:none;margin-top:12px">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px;margin-bottom:8px">PROCESANDO...</div>
-      <div style="background:var(--s2);border-radius:4px;height:8px;overflow:hidden">
-        <div id="bi-bar" style="background:var(--ac);height:100%;width:0%;transition:width .3s;border-radius:4px"></div>
+    <!-- STEP 1: Select zone + folder -->
+    <div id="bi-step1">
+      <div style="background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--tx2);line-height:1.7">
+        <b style="color:var(--ac)">Flujo de trabajo:</b> Selecciona la zona → abre la carpeta raíz → asigna cada par de imágenes a su componente → importa todo de golpe.
       </div>
-      <div id="bi-status" style="font-size:11px;color:var(--tx2);margin-top:6px"></div>
+      <label class="lbl">Zona *</label>
+      <select id="bi-zone">
+        <option value="">— Seleccionar zona —</option>
+      </select>
+      <label class="lbl" style="margin-top:12px">Carpeta raíz con subcarpetas de máquinas</label>
+      <div class="upz" onclick="document.getElementById('bi-folder').click()" style="padding:20px">
+        <div style="font-size:32px">📂</div>
+        <p style="font-size:13px;margin-top:6px"><b>Haz clic</b> y selecciona la carpeta que contiene las subcarpetas de cada máquina</p>
+        <p style="font-size:10px;margin-top:4px;color:var(--tx3)">Ej: abre "SECADERO 5" → detectará EC 212-1, EC 212-2, etc.</p>
+      </div>
+      <input type="file" id="bi-folder" webkitdirectory multiple style="display:none" onchange="handleFolderSelect(event)"/>
+    </div>
+
+    <!-- STEP 2: Assign pairs to components -->
+    <div id="bi-step2" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px" id="bi-step2-title">ASIGNA COMPONENTES</div>
+        <div class="row">
+          <button class="btn bg xs" onclick="biPrevMachine()" id="bi-prev" disabled>← Anterior</button>
+          <span id="bi-mac-counter" style="font-family:var(--mono);font-size:11px;color:var(--tx2)">1/1</span>
+          <button class="btn bg xs" onclick="biNextMachine()" id="bi-next">Siguiente →</button>
+        </div>
+      </div>
+
+      <div id="bi-machine-title" style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:12px"></div>
+
+      <div style="font-size:11px;color:var(--tx2);margin-bottom:10px">
+        Asigna cada par de imágenes al componente que corresponde. Los pares están ordenados por fecha/hora del archivo.
+      </div>
+
+      <div id="bi-pairs-container" style="max-height:340px;overflow-y:auto"></div>
+
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn bp" id="bi-confirm-mac" onclick="biConfirmMachine()">✓ Confirmar esta máquina</button>
+        <button class="btn bg xs" onclick="biSkipMachine()">Saltar máquina</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: Review + import -->
+    <div id="bi-step3" style="display:none">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px;margin-bottom:10px">RESUMEN — LISTO PARA IMPORTAR</div>
+      <div id="bi-summary" style="max-height:200px;overflow-y:auto;border:1px solid var(--br);border-radius:8px;padding:10px;margin-bottom:12px"></div>
+      <div style="font-size:12px;color:var(--tx2);margin-bottom:14px" id="bi-summary-count"></div>
+    </div>
+
+    <!-- Progress -->
+    <div id="bi-progress" style="display:none;margin-top:12px">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px;margin-bottom:8px">IMPORTANDO...</div>
+      <div style="background:var(--s2);border-radius:4px;height:10px;overflow:hidden">
+        <div id="bi-bar" style="background:var(--ac);height:100%;width:0%;transition:width .4s;border-radius:4px"></div>
+      </div>
+      <div id="bi-status" style="font-size:11px;color:var(--tx2);margin-top:8px"></div>
+      <div id="bi-log" style="max-height:130px;overflow-y:auto;margin-top:8px;font-size:10px;font-family:var(--mono);color:var(--tx2)"></div>
     </div>
 
     <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn bp" id="bi-start" onclick="startBulkImport()" disabled>🚀 Importar todas</button>
+      <button class="btn bp" id="bi-start" onclick="startMultiFolderImport()" style="display:none">🚀 Importar todo</button>
       <button class="btn bg" onclick="closeModal('mbulk');resetBulk()">Cancelar</button>
     </div>
   </div>
