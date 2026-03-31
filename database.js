@@ -103,7 +103,17 @@ const Q = {
 
   // Zones
   getAllZones: async () => {
-    const r = await pool.query('SELECT * FROM zones ORDER BY name');
+    const r = await pool.query(`
+      SELECT z.*,
+        COUNT(DISTINCT ma.id) as machine_count,
+        SUM(CASE WHEN m.severity='critico' THEN 1 ELSE 0 END) as critico_count,
+        SUM(CASE WHEN m.severity='alerta' THEN 1 ELSE 0 END) as alerta_count
+      FROM zones z
+      LEFT JOIN machines ma ON ma.zone_id = z.id
+      LEFT JOIN measurements m ON m.machine_id = ma.id
+      GROUP BY z.id
+      ORDER BY z.name
+    `);
     return r.rows;
   },
   getZone: async (id) => {
