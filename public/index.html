@@ -66,6 +66,20 @@
       <button class="btn bp sm" id="btn-add-zone" onclick="openZoneModal()" style="display:none">+ Nueva zona</button>
     </div>
     <div class="g3" style="margin-bottom:16px" id="gkpis"></div>
+    <!-- LAST ACTIVITY + QUICK STATS -->
+    <div id="dashboard-extra" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div class="card" id="last-activity-card">
+        <div class="ctitle">⚡ Última actividad</div>
+        <div id="last-activity-list"><p style="color:var(--tx2);font-size:12px">Cargando...</p></div>
+      </div>
+      <div class="card" id="quick-stats-card">
+        <div class="ctitle">📊 Resumen global</div>
+        <div id="quick-stats-content"><p style="color:var(--tx2);font-size:12px">Cargando...</p></div>
+      </div>
+    </div>
+
+    <!-- ZONES -->
+    <div style="font-family:var(--mono);font-size:10px;color:var(--tx2);letter-spacing:2px;margin-bottom:10px">🏭 ZONAS DE LA FÁBRICA</div>
     <div class="g4" id="zone-grid"></div>
     <div id="alrt-sec" style="display:none;margin-top:16px">
       <div class="card"><div class="card-title">⚠ Alertas recientes</div><div id="alrt-list"></div></div>

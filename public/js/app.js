@@ -163,11 +163,24 @@ async function goZones() {
 }
 function renderZones(zones, stats) {
   document.getElementById('gkpis').innerHTML = `
-    <div class="card kpi"><div class="kpin">${stats?.zone_count||0}</div><div class="kpil">Zonas</div></div>
-    <div class="card kpi" style="border-color:${stats?.critico_count?'rgba(255,51,85,.25)':'var(--br)'}">
-      <div class="kpin" style="color:${stats?.critico_count?'var(--rd)':'var(--ac)'}">${stats?.critico_count||0}</div><div class="kpil">Críticas</div></div>
-    <div class="card kpi" style="border-color:${stats?.alerta_count?'rgba(255,204,0,.25)':'var(--br)'}">
-      <div class="kpin" style="color:${stats?.alerta_count?'var(--yw)':'var(--ac)'}">${stats?.alerta_count||0}</div><div class="kpil">En alerta</div></div>`;
+    <div class="card kpi" onclick="document.getElementById('zone-grid').scrollIntoView({behavior:'smooth'})" style="cursor:pointer">
+      <div style="font-size:26px;margin-bottom:4px">🏭</div>
+      <div class="kpin">${stats?.zone_count||0}</div>
+      <div class="kpil">Zonas</div>
+      <div style="font-size:10px;color:var(--tx2);margin-top:4px">Ver todas ↓</div>
+    </div>
+    <div class="card kpi" onclick="showAlertList('critico')" style="cursor:pointer;border-color:${stats?.critico_count?'rgba(255,51,85,.35)':'var(--br)'}">
+      <div style="font-size:26px;margin-bottom:4px">${stats?.critico_count>0?'🔴':'✅'}</div>
+      <div class="kpin" style="color:${stats?.critico_count?'var(--rd)':'var(--gr)'}">${stats?.critico_count||0}</div>
+      <div class="kpil">Críticas</div>
+      <div style="font-size:10px;color:${stats?.critico_count?'var(--rd)':'var(--tx2)'};margin-top:4px">${stats?.critico_count>0?'Ver listado →':'Sin alertas críticas'}</div>
+    </div>
+    <div class="card kpi" onclick="showAlertList('alerta')" style="cursor:pointer;border-color:${stats?.alerta_count?'rgba(255,204,0,.35)':'var(--br)'}">
+      <div style="font-size:26px;margin-bottom:4px">${stats?.alerta_count>0?'⚠️':'✅'}</div>
+      <div class="kpin" style="color:${stats?.alerta_count?'var(--yw)':'var(--gr)'}">${stats?.alerta_count||0}</div>
+      <div class="kpil">En alerta</div>
+      <div style="font-size:10px;color:${stats?.alerta_count?'var(--yw)':'var(--tx2)'};margin-top:4px">${stats?.alerta_count>0?'Ver listado →':'Sin alertas'}</div>
+    </div>`
 
   document.getElementById('btn-add-zone').style.display = isAdmin() ? '' : 'none';
   const grid = document.getElementById('zone-grid');
@@ -193,6 +206,8 @@ function renderZones(zones, stats) {
 
   // Alerts
   loadAlerts();
+  // Last activity + quick stats
+  loadDashboardExtra(zones, stats);
 }
 async function loadAlerts() {
   try {
@@ -789,6 +804,128 @@ async function deleteMeas() {
 }
 
 
+
+
+
+// ── DASHBOARD EXTRA ───────────────────────────────────────────────────────────
+async function loadDashboardExtra(zones, stats) {
+  // Quick stats
+  const qs = document.getElementById('quick-stats-content');
+  if(qs) {
+    const totalMacs = zones.reduce((a,z) => a + parseInt(z.machine_count||0), 0);
+    const crits = parseInt(stats?.critico_count||0);
+    const alerts = parseInt(stats?.alerta_count||0);
+    qs.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="text-align:center;padding:10px;background:var(--s2);border-radius:8px">
+          <div style="font-size:22px;font-weight:700;color:var(--ac);font-family:var(--mono)">${totalMacs}</div>
+          <div style="font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px">Máquinas</div>
+        </div>
+        <div style="text-align:center;padding:10px;background:var(--s2);border-radius:8px">
+          <div style="font-size:22px;font-weight:700;color:${crits?'var(--rd)':'var(--gr)'};font-family:var(--mono)">${crits}</div>
+          <div style="font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px">Críticos</div>
+        </div>
+        <div style="text-align:center;padding:10px;background:var(--s2);border-radius:8px">
+          <div style="font-size:22px;font-weight:700;color:${alerts?'var(--yw)':'var(--gr)'};font-family:var(--mono)">${alerts}</div>
+          <div style="font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px">En alerta</div>
+        </div>
+        <div style="text-align:center;padding:10px;background:var(--s2);border-radius:8px">
+          <div style="font-size:22px;font-weight:700;color:var(--gr);font-family:var(--mono)">${crits===0&&alerts===0?'OK':'!'}</div>
+          <div style="font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px">Estado</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--tx2);text-align:center">
+        ${crits===0&&alerts===0?'✅ Todo en estado normal':'⚠️ Hay '+(crits+alerts)+' mediciones que requieren atención'}
+      </div>`;
+  }
+
+  // Last activity
+  try {
+    const la = document.getElementById('last-activity-list');
+    if(!la) return;
+    const alerts = await API.get('/measurements/alerts');
+    // Get recent from all zones
+    let recent = [];
+    for(const z of zones.slice(0,3)) {
+      try {
+        const macs = await API.get('/zones/'+z.id+'/machines');
+        for(const mac of macs.slice(0,2)) {
+          for(const comp of (mac.components||[]).slice(0,1)) {
+            const ms = await API.get('/components/'+comp.id+'/measurements');
+            if(ms.length) recent.push({...ms[ms.length-1], machine_name: mac.name, comp_name: comp.name, zone_name: z.name, zone_icon: z.icon});
+          }
+        }
+      } catch(e) {}
+    }
+    recent.sort((a,b) => b.date.localeCompare(a.date));
+    recent = recent.slice(0,5);
+    if(!recent.length) { la.innerHTML='<p style="color:var(--tx2);font-size:12px">Sin mediciones recientes.</p>'; return; }
+    la.innerHTML = recent.map(m => {
+      const mx = Math.max(parseFloat(m.vx)||0, parseFloat(m.vy)||0, parseFloat(m.vz)||0);
+      return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--br2)">
+        <span style="font-size:14px">${m.severity==='critico'?'🔴':m.severity==='alerta'?'🟡':'🟢'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.machine_name} › ${m.comp_name}</div>
+          <div style="font-size:10px;color:var(--tx2)">${m.date} · <span style="color:var(--ac)">${mx.toFixed(2)} mm/s</span> · ${m.zone_icon||''} ${m.zone_name}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    const la = document.getElementById('last-activity-list');
+    if(la) la.innerHTML='<p style="color:var(--tx2);font-size:12px">—</p>';
+  }
+}
+
+// ── ALERT LIST VIEW ───────────────────────────────────────────────────────────
+async function showAlertList(severity) {
+  const all = await API.get('/measurements/alerts');
+  const filtered = severity === 'all' ? all : all.filter(m => m.severity === severity);
+  const title = severity === 'critico' ? '🔴 Mediciones Críticas' : severity === 'alerta' ? '⚠️ Mediciones en Alerta' : '📋 Todas las Alertas';
+  const color = severity === 'critico' ? 'var(--rd)' : 'var(--yw)';
+
+  // Show in alert section
+  const sec = document.getElementById('alrt-sec');
+  const list = document.getElementById('alrt-list');
+  sec.style.display = 'block';
+
+  if(!filtered.length) {
+    list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--tx2)">
+      <div style="font-size:32px;margin-bottom:8px">✅</div>
+      <p>No hay mediciones en este estado.</p>
+    </div>`;
+  } else {
+    list.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:${color};letter-spacing:2px;margin-bottom:10px">${title} (${filtered.length})</div>` +
+    filtered.map(m => {
+      const mx = Math.max(parseFloat(m.vx)||0, parseFloat(m.vy)||0, parseFloat(m.vz)||0);
+      return `<div class="hr" onclick="openMeasFromZone('${m.id}','${m.machine_id}','${m.component_id}')">
+        <span style="font-size:18px">${m.severity==='critico'?'🔴':'🟡'}</span>
+        <div style="flex:1">
+          <div style="font-size:12px"><b>${m.machine_name}</b> › ${m.comp_name} — max <b style="color:var(--ac)">${mx.toFixed(2)} mm/s</b></div>
+          <div style="font-size:10px;color:var(--tx2)">${m.zone_icon||'📍'} ${m.zone_name} · ${m.fault_type||'Sin clasificar'} · ${m.date}</div>
+        </div>
+        ${m.severity==='critico'?'<span class="badge bc">Crítico</span>':'<span class="badge ba">Alerta</span>'}
+      </div>`;
+    }).join('');
+  }
+  sec.scrollIntoView({behavior:'smooth'});
+}
+
+async function openMeasFromZone(measId, macId, compId) {
+  // Find the zone for this machine
+  const zones = S.zones;
+  for(const z of zones) {
+    const machines = await API.get('/zones/'+z.id+'/machines');
+    const mac = machines.find(m=>m.id===macId);
+    if(mac) {
+      S.curZone = z; S.curMachine = mac; S.machines = machines;
+      const ms = await API.get('/components/'+compId+'/measurements');
+      S.measurements = ms; S.curComp = mac.components?.find(c=>c.id===compId);
+      const m = ms.find(x=>x.id===measId);
+      if(m) { S.curMeas = m; renderMeasDetail(measId); }
+      return;
+    }
+  }
+}
 
 // ── BULK IMPORT ───────────────────────────────────────────────────────────────
 let bulkFiles = [], bulkPairs = [];
