@@ -167,6 +167,19 @@ router.post('/components/:compId/measurements', requireAdmin, upload.array('imag
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+router.put('/measurements/:id', requireAdmin, async (req, res) => {
+  try {
+    const { date, point, vx, vy, vz, temperature, severity, fault_type, notes } = req.body;
+    await require('../database').pool.query(
+      'UPDATE measurements SET date=$1,point=$2,vx=$3,vy=$4,vz=$5,temperature=$6,severity=$7,fault_type=$8,notes=$9 WHERE id=$10',
+      [date, point||'', parseFloat(vx)||null, parseFloat(vy)||null, parseFloat(vz)||null,
+       parseFloat(temperature)||null, severity||'normal', fault_type||'', notes||'', req.params.id]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 router.delete('/measurements/:id', requireAdmin, async (req, res) => {
   try {
     const m = await Q.getMeasurement(req.params.id);

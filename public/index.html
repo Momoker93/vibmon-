@@ -103,6 +103,7 @@
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:13px;flex-wrap:wrap">
       <button class="btn bg sm" id="back-meas">← Volver</button>
       <div style="font-size:15px;font-weight:700;color:#f1f5f9;flex:1" id="md-title"></div>
+      <button class="btn bw sm" id="btn-edit-meas" style="display:none" onclick="openEditMeas()">✏ Modificar</button>
       <button class="btn bd sm" id="btn-del-meas" style="display:none" onclick="deleteMeas()">🗑 Eliminar</button>
     </div>
     <div id="md-content"></div>
@@ -178,6 +179,47 @@
   <div style="position:relative;max-width:94vw">
     <button class="btn bg sm" style="position:absolute;top:-40px;right:0" onclick="closeModal('mlb')">✕ Cerrar</button>
     <img id="lb-img" src="" alt="" style="max-width:100%;max-height:86vh;border-radius:8px;border:1px solid var(--br)"/>
+  </div>
+</div>
+
+<!-- EDIT MEASUREMENT MODAL -->
+<div class="mov" id="medit">
+  <div class="mbox" style="max-width:540px">
+    <div class="mtitle">✏ MODIFICAR MEDICIÓN <button class="btn bg xs" onclick="closeModal('medit')">✕</button></div>
+    <div class="g2">
+      <div><label class="lbl">Fecha</label><input type="date" id="em-date"/></div>
+      <div><label class="lbl">Punto</label><input id="em-point" placeholder="Ej: Lado libre"/></div>
+    </div>
+    <div class="xyz-inp" style="margin-top:10px">
+      <div class="inp-x"><div class="xyz-axis-lbl" style="color:var(--vx)">X — HORIZONTAL</div><input type="number" step=".01" id="em-vx" placeholder="0.00"/></div>
+      <div class="inp-y"><div class="xyz-axis-lbl" style="color:var(--vy)">Y — VERTICAL</div><input type="number" step=".01" id="em-vy" placeholder="0.00"/></div>
+      <div class="inp-z"><div class="xyz-axis-lbl" style="color:var(--vz)">Z — AXIAL</div><input type="number" step=".01" id="em-vz" placeholder="0.00"/></div>
+    </div>
+    <div class="g2">
+      <div><label class="lbl">Temperatura (°C)</label><input type="number" step=".1" id="em-temp" placeholder="—"/></div>
+      <div><label class="lbl">Severidad</label>
+        <select id="em-severity">
+          <option value="normal">✅ Normal</option>
+          <option value="alerta">⚠ Alerta</option>
+          <option value="critico">🔴 Crítico</option>
+        </select>
+      </div>
+    </div>
+    <label class="lbl">Tipo de falla</label>
+    <select id="em-fault">
+      <option value="">— Sin clasificar —</option>
+      <option>Desbalance (dominante 1X)</option><option>Desalineación (dominante 2X)</option>
+      <option>Aflojamiento mecánico (armónicos múltiples)</option><option>Falla rodamiento (BPFO/BPFI/BSF)</option>
+      <option>Falla engranaje (GMF)</option><option>Resonancia</option>
+      <option>Rozamiento (rub, 0.5X)</option><option>Problema eléctrico (2×línea)</option>
+      <option>Normal / Sin falla</option>
+    </select>
+    <label class="lbl">Observaciones</label>
+    <textarea id="em-notes" placeholder="Condiciones, acciones tomadas..."></textarea>
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn bp" onclick="saveEditMeas()">💾 Guardar cambios</button>
+      <button class="btn bg" onclick="closeModal('medit')">Cancelar</button>
+    </div>
   </div>
 </div>
 

@@ -1,9 +1,9 @@
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 const PREDEF_COMPS = [
-  'Motor DE','Motor NDE',
+  'Motor libre','Motor acoplado',
   'Reductor entrada','Reductor salida',
-  'Rodamiento tambor cabeza','Rodamiento tambor cola','Rodamiento tambor tensor',
-  'Rodamiento DE','Rodamiento NDE',
+  'Rodamiento acoplado','Rodamiento libre',
+  'Rodamiento cola 01','Rodamiento cola 02',
   'Chumacera intermedia','Acoplamiento','Ventilador','Bomba','Compresor'
 ];
 const SEV = {
@@ -698,6 +698,7 @@ async function renderMeasDetail(measId) {
   document.getElementById('md-title').textContent = `${S.curMachine?.name||'?'} › ${comp?.name||'?'} — ${m.date}`;
   document.getElementById('back-meas').onclick = () => goMachineById(S.curMachine.id);
   document.getElementById('btn-del-meas').style.display = isAdmin() ? '' : 'none';
+  document.getElementById('btn-edit-meas').style.display = isAdmin() ? '' : 'none';
   const imgs = m.images||[];
   const imgHtml = imgs.length ? `<div class="card"><div class="card-title">📷 Imágenes (${imgs.length})</div>
     <div class="igrid">${imgs.map(src=>`<div class="ith"><img src="${src}" onclick="openLB('${src}')"/></div>`).join('')}</div></div>`:'';
@@ -742,7 +743,12 @@ async function renderMeasDetail(measId) {
       ${m.fault_type?`<div style="margin-top:12px"><div style="font-size:10px;color:var(--tx2)">TIPO DE FALLA</div><div style="font-size:14px;margin-top:4px">${m.fault_type}</div></div>`:''}
       ${m.notes?`<div style="margin-top:10px"><div style="font-size:10px;color:var(--tx2)">OBSERVACIONES</div><p style="font-size:13px;color:var(--tx2);margin-top:4px;line-height:1.6">${m.notes}</p></div>`:''}
       ${m.created_by?`<div style="margin-top:10px;font-size:10px;color:var(--tx3)">Registrado por: ${m.created_by} · ${new Date(m.created_at).toLocaleString('es-ES')}</div>`:''}
-    </div>${imgHtml}`;
+    </div>
+    ${m.ai_result?`<div style="background:linear-gradient(135deg,rgba(0,68,170,.15),rgba(0,136,255,.08));border:1px solid rgba(0,136,255,.3);border-radius:10px;padding:16px;margin-bottom:12px">
+      <div style="font-family:var(--mono);font-size:10px;color:#4499ff;letter-spacing:2px;margin-bottom:10px">🤖 ANÁLISIS IA</div>
+      <div style="font-size:13px;color:var(--tx);line-height:1.7">${m.ai_result}</div>
+    </div>`:''}
+    ${imgHtml}`;
   showView('v-meas');
 }
 async function deleteMeas() {
@@ -754,6 +760,44 @@ async function deleteMeas() {
   } catch(e) { toast(e.message,'err'); }
 }
 
+
+// ── EDIT MEASUREMENT ──────────────────────────────────────────────────────────
+function openEditMeas() {
+  const m = S.curMeas; if(!m) return;
+  document.getElementById('em-date').value = m.date || '';
+  document.getElementById('em-point').value = m.point || '';
+  document.getElementById('em-vx').value = m.vx || '';
+  document.getElementById('em-vy').value = m.vy || '';
+  document.getElementById('em-vz').value = m.vz || '';
+  document.getElementById('em-temp').value = m.temperature || '';
+  document.getElementById('em-severity').value = m.severity || 'normal';
+  document.getElementById('em-fault').value = m.fault_type || '';
+  document.getElementById('em-notes').value = m.notes || '';
+  openModal('medit');
+}
+async function saveEditMeas() {
+  const m = S.curMeas; if(!m) return;
+  const body = {
+    date: document.getElementById('em-date').value,
+    point: document.getElementById('em-point').value,
+    vx: document.getElementById('em-vx').value,
+    vy: document.getElementById('em-vy').value,
+    vz: document.getElementById('em-vz').value,
+    temperature: document.getElementById('em-temp').value,
+    severity: document.getElementById('em-severity').value,
+    fault_type: document.getElementById('em-fault').value,
+    notes: document.getElementById('em-notes').value
+  };
+  try {
+    await API.put('/measurements/' + m.id, body);
+    closeModal('medit');
+    toast('✓ Medición actualizada', 'ok');
+    // Refresh measurements and re-render detail
+    if(S.curComp) S.measurements = await API.get('/components/' + S.curComp.id + '/measurements');
+    const updated = S.measurements.find(x => x.id === m.id);
+    if(updated) { S.curMeas = updated; renderMeasDetail(updated.id); }
+  } catch(e) { toast(e.message, 'err'); }
+}
 // ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 async function analyzeAI(cid) {
   if(!S.newImgs.length){toast('Sube al menos una imagen','err');return;}
