@@ -1,174 +1,224 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'vibmon.db');
-const db = new Database(DB_PATH);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
-// Enable WAL mode for better performance
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// ── SCHEMA ────────────────────────────────────────────────────────────────────
+async function initDB() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'viewer',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
-// ── SCHEMA ──────────────────────────────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'viewer',
-    created_at TEXT DEFAULT (datetime('now'))
-  );
+      CREATE TABLE IF NOT EXISTS zones (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        icon TEXT DEFAULT '🏭',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
-  CREATE TABLE IF NOT EXISTS zones (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    icon TEXT DEFAULT '🏭',
-    created_at TEXT DEFAULT (datetime('now'))
-  );
+      CREATE TABLE IF NOT EXISTS machines (
+        id TEXT PRIMARY KEY,
+        zone_id TEXT NOT NULL REFERENCES zones(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        type TEXT DEFAULT '',
+        rpm INTEGER,
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
-  CREATE TABLE IF NOT EXISTS machines (
-    id TEXT PRIMARY KEY,
-    zone_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    type TEXT,
-    rpm INTEGER,
-    notes TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE
-  );
+      CREATE TABLE IF NOT EXISTS components (
+        id TEXT PRIMARY KEY,
+        machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0
+      );
 
-  CREATE TABLE IF NOT EXISTS components (
-    id TEXT PRIMARY KEY,
-    machine_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    sort_order INTEGER DEFAULT 0,
-    FOREIGN KEY (machine_id) REFERENCES machines(id) ON DELETE CASCADE
-  );
+      CREATE TABLE IF NOT EXISTS measurements (
+        id TEXT PRIMARY KEY,
+        machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+        component_id TEXT NOT NULL REFERENCES components(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        point TEXT DEFAULT '',
+        vx REAL,
+        vy REAL,
+        vz REAL,
+        temperature REAL,
+        severity TEXT DEFAULT 'normal',
+        fault_type TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT NOW(),
+        created_by TEXT DEFAULT ''
+      );
 
-  CREATE TABLE IF NOT EXISTS measurements (
-    id TEXT PRIMARY KEY,
-    machine_id TEXT NOT NULL,
-    component_id TEXT NOT NULL,
-    date TEXT NOT NULL,
-    point TEXT,
-    vx REAL,
-    vy REAL,
-    vz REAL,
-    temperature REAL,
-    severity TEXT NOT NULL DEFAULT 'normal',
-    fault_type TEXT,
-    notes TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
-    created_by TEXT,
-    FOREIGN KEY (machine_id) REFERENCES machines(id) ON DELETE CASCADE,
-    FOREIGN KEY (component_id) REFERENCES components(id) ON DELETE CASCADE
-  );
+      CREATE TABLE IF NOT EXISTS measurement_images (
+        id SERIAL PRIMARY KEY,
+        measurement_id TEXT NOT NULL REFERENCES measurements(id) ON DELETE CASCADE,
+        filename TEXT NOT NULL,
+        original_name TEXT DEFAULT '',
+        mime_type TEXT DEFAULT 'image/jpeg',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS measurement_images (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    measurement_id TEXT NOT NULL,
-    filename TEXT NOT NULL,
-    original_name TEXT,
-    mime_type TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (measurement_id) REFERENCES measurements(id) ON DELETE CASCADE
-  );
-`);
-
-// ── SEED ADMIN ───────────────────────────────────────────────────────────────
-function seedAdmin() {
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(process.env.ADMIN_USER || 'admin');
-  if (!existing) {
-    const hash = bcrypt.hashSync(process.env.ADMIN_PASS || 'vibmon2024', 12);
-    db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run(
-      process.env.ADMIN_USER || 'admin', hash, 'admin'
-    );
-    console.log('✓ Admin user created');
+    // Seed admin
+    const existing = await client.query('SELECT id FROM users WHERE username=$1', [process.env.ADMIN_USER || 'admin']);
+    if (existing.rows.length === 0) {
+      const hash = bcrypt.hashSync(process.env.ADMIN_PASS || 'vibmon2024', 12);
+      await client.query('INSERT INTO users (username, password_hash, role) VALUES ($1,$2,$3)',
+        [process.env.ADMIN_USER || 'admin', hash, 'admin']);
+      console.log('✓ Admin user created');
+    }
+  } finally {
+    client.release();
   }
 }
-seedAdmin();
 
-// ── QUERY HELPERS ────────────────────────────────────────────────────────────
+// ── QUERY HELPERS ─────────────────────────────────────────────────────────────
 const Q = {
   // Users
-  getUserByUsername: db.prepare('SELECT * FROM users WHERE username = ?'),
-  getUserById: db.prepare('SELECT id, username, role FROM users WHERE id = ?'),
+  getUserByUsername: async (username) => {
+    const r = await pool.query('SELECT * FROM users WHERE username=$1', [username]);
+    return r.rows[0] || null;
+  },
+  updateUserPassword: async (hash, username) => {
+    await pool.query('UPDATE users SET password_hash=$1 WHERE username=$2', [hash, username]);
+  },
 
   // Zones
-  getAllZones: db.prepare('SELECT * FROM zones ORDER BY name'),
-  getZone: db.prepare('SELECT * FROM zones WHERE id = ?'),
-  insertZone: db.prepare('INSERT INTO zones (id, name, description, icon) VALUES (?, ?, ?, ?)'),
-  updateZone: db.prepare('UPDATE zones SET name=?, description=?, icon=? WHERE id=?'),
-  deleteZone: db.prepare('DELETE FROM zones WHERE id=?'),
+  getAllZones: async () => {
+    const r = await pool.query('SELECT * FROM zones ORDER BY name');
+    return r.rows;
+  },
+  getZone: async (id) => {
+    const r = await pool.query('SELECT * FROM zones WHERE id=$1', [id]);
+    return r.rows[0] || null;
+  },
+  insertZone: async (id, name, desc, icon) => {
+    await pool.query('INSERT INTO zones (id,name,description,icon) VALUES ($1,$2,$3,$4)', [id, name, desc, icon]);
+  },
+  updateZone: async (name, desc, icon, id) => {
+    await pool.query('UPDATE zones SET name=$1,description=$2,icon=$3 WHERE id=$4', [name, desc, icon, id]);
+  },
+  deleteZone: async (id) => {
+    await pool.query('DELETE FROM zones WHERE id=$1', [id]);
+  },
 
   // Machines
-  getMachinesByZone: db.prepare('SELECT * FROM machines WHERE zone_id=? ORDER BY name'),
-  getMachine: db.prepare('SELECT * FROM machines WHERE id=?'),
-  insertMachine: db.prepare('INSERT INTO machines (id, zone_id, name, type, rpm, notes) VALUES (?,?,?,?,?,?)'),
-  updateMachine: db.prepare('UPDATE machines SET name=?,type=?,rpm=?,notes=? WHERE id=?'),
-  deleteMachine: db.prepare('DELETE FROM machines WHERE id=?'),
+  getMachinesByZone: async (zoneId) => {
+    const r = await pool.query('SELECT * FROM machines WHERE zone_id=$1 ORDER BY name', [zoneId]);
+    return r.rows;
+  },
+  getMachine: async (id) => {
+    const r = await pool.query('SELECT * FROM machines WHERE id=$1', [id]);
+    return r.rows[0] || null;
+  },
+  insertMachine: async (id, zoneId, name, type, rpm, notes) => {
+    await pool.query('INSERT INTO machines (id,zone_id,name,type,rpm,notes) VALUES ($1,$2,$3,$4,$5,$6)',
+      [id, zoneId, name, type, rpm, notes]);
+  },
+  updateMachine: async (name, type, rpm, notes, id) => {
+    await pool.query('UPDATE machines SET name=$1,type=$2,rpm=$3,notes=$4 WHERE id=$5', [name, type, rpm, notes, id]);
+  },
+  deleteMachine: async (id) => {
+    await pool.query('DELETE FROM machines WHERE id=$1', [id]);
+  },
 
   // Components
-  getComponentsByMachine: db.prepare('SELECT * FROM components WHERE machine_id=? ORDER BY sort_order, name'),
-  getComponent: db.prepare('SELECT * FROM components WHERE id=?'),
-  insertComponent: db.prepare('INSERT INTO components (id, machine_id, name, sort_order) VALUES (?,?,?,?)'),
-  deleteComponentsByMachine: db.prepare('DELETE FROM components WHERE machine_id=?'),
+  getComponentsByMachine: async (machineId) => {
+    const r = await pool.query('SELECT * FROM components WHERE machine_id=$1 ORDER BY sort_order,name', [machineId]);
+    return r.rows;
+  },
+  getComponent: async (id) => {
+    const r = await pool.query('SELECT * FROM components WHERE id=$1', [id]);
+    return r.rows[0] || null;
+  },
+  insertComponent: async (id, machineId, name, order) => {
+    await pool.query('INSERT INTO components (id,machine_id,name,sort_order) VALUES ($1,$2,$3,$4)', [id, machineId, name, order]);
+  },
+  deleteComponentsByMachine: async (machineId) => {
+    await pool.query('DELETE FROM components WHERE machine_id=$1', [machineId]);
+  },
 
   // Measurements
-  getMeasurementsByComponent: db.prepare(`
-    SELECT m.*, GROUP_CONCAT(mi.filename) as image_files
-    FROM measurements m
-    LEFT JOIN measurement_images mi ON mi.measurement_id = m.id
-    WHERE m.component_id=?
-    GROUP BY m.id
-    ORDER BY m.date ASC, m.created_at ASC
-  `),
-  getMeasurement: db.prepare(`
-    SELECT m.*, GROUP_CONCAT(mi.filename) as image_files, GROUP_CONCAT(mi.original_name) as image_names
-    FROM measurements m
-    LEFT JOIN measurement_images mi ON mi.measurement_id = m.id
-    WHERE m.id=?
-    GROUP BY m.id
-  `),
-  getMeasurementsByMachine: db.prepare(`
-    SELECT m.* FROM measurements m WHERE m.machine_id=? ORDER BY m.date DESC LIMIT 100
-  `),
-  getAllRecentAlerts: db.prepare(`
-    SELECT m.*, ma.name as machine_name, z.name as zone_name, z.icon as zone_icon, c.name as comp_name
-    FROM measurements m
-    JOIN machines ma ON ma.id = m.machine_id
-    JOIN zones z ON z.id = ma.zone_id
-    JOIN components c ON c.id = m.component_id
-    WHERE m.severity != 'normal'
-    ORDER BY m.date DESC, m.created_at DESC
-    LIMIT 20
-  `),
-  insertMeasurement: db.prepare('INSERT INTO measurements (id,machine_id,component_id,date,point,vx,vy,vz,temperature,severity,fault_type,notes,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'),
-  deleteMeasurement: db.prepare('DELETE FROM measurements WHERE id=?'),
-  insertImage: db.prepare('INSERT INTO measurement_images (measurement_id, filename, original_name, mime_type) VALUES (?,?,?,?)'),
-  getImagesByMeasurement: db.prepare('SELECT * FROM measurement_images WHERE measurement_id=?'),
+  getMeasurementsByComponent: async (compId) => {
+    const r = await pool.query(`
+      SELECT m.*, STRING_AGG(mi.filename, ',') as image_files
+      FROM measurements m
+      LEFT JOIN measurement_images mi ON mi.measurement_id = m.id
+      WHERE m.component_id=$1
+      GROUP BY m.id ORDER BY m.date ASC, m.created_at ASC
+    `, [compId]);
+    return r.rows;
+  },
+  getMeasurement: async (id) => {
+    const r = await pool.query(`
+      SELECT m.*, STRING_AGG(mi.filename, ',') as image_files,
+             STRING_AGG(mi.original_name, ',') as image_names
+      FROM measurements m
+      LEFT JOIN measurement_images mi ON mi.measurement_id = m.id
+      WHERE m.id=$1 GROUP BY m.id
+    `, [id]);
+    return r.rows[0] || null;
+  },
+  getMeasurementsByMachine: async (machineId) => {
+    const r = await pool.query('SELECT * FROM measurements WHERE machine_id=$1 ORDER BY date DESC LIMIT 100', [machineId]);
+    return r.rows;
+  },
+  getAllRecentAlerts: async () => {
+    const r = await pool.query(`
+      SELECT m.*, ma.name as machine_name, z.name as zone_name, z.icon as zone_icon, c.name as comp_name
+      FROM measurements m
+      JOIN machines ma ON ma.id = m.machine_id
+      JOIN zones z ON z.id = ma.zone_id
+      JOIN components c ON c.id = m.component_id
+      WHERE m.severity != 'normal'
+      ORDER BY m.date DESC, m.created_at DESC LIMIT 20
+    `);
+    return r.rows;
+  },
+  insertMeasurement: async (id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy) => {
+    await pool.query(
+      'INSERT INTO measurements (id,machine_id,component_id,date,point,vx,vy,vz,temperature,severity,fault_type,notes,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
+      [id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy]
+    );
+  },
+  deleteMeasurement: async (id) => {
+    await pool.query('DELETE FROM measurements WHERE id=$1', [id]);
+  },
+  insertImage: async (measId, filename, originalName, mimeType) => {
+    await pool.query('INSERT INTO measurement_images (measurement_id,filename,original_name,mime_type) VALUES ($1,$2,$3,$4)',
+      [measId, filename, originalName, mimeType]);
+  },
+  getImagesByMeasurement: async (measId) => {
+    const r = await pool.query('SELECT * FROM measurement_images WHERE measurement_id=$1', [measId]);
+    return r.rows;
+  },
 
   // Stats
-  getZoneStats: db.prepare(`
-    SELECT 
-      COUNT(DISTINCT ma.id) as machine_count,
-      SUM(CASE WHEN m.severity='critico' THEN 1 ELSE 0 END) as critico_count,
-      SUM(CASE WHEN m.severity='alerta' THEN 1 ELSE 0 END) as alerta_count
-    FROM machines ma
-    LEFT JOIN measurements m ON m.machine_id = ma.id
-    WHERE ma.zone_id=?
-  `),
-  getGlobalStats: db.prepare(`
-    SELECT 
-      COUNT(DISTINCT z.id) as zone_count,
-      COUNT(DISTINCT ma.id) as machine_count,
-      SUM(CASE WHEN m.severity='critico' THEN 1 ELSE 0 END) as critico_count,
-      SUM(CASE WHEN m.severity='alerta' THEN 1 ELSE 0 END) as alerta_count
-    FROM zones z
-    LEFT JOIN machines ma ON ma.zone_id=z.id
-    LEFT JOIN measurements m ON m.machine_id=ma.id
-  `)
+  getGlobalStats: async () => {
+    const r = await pool.query(`
+      SELECT
+        COUNT(DISTINCT z.id) as zone_count,
+        COUNT(DISTINCT ma.id) as machine_count,
+        SUM(CASE WHEN m.severity='critico' THEN 1 ELSE 0 END) as critico_count,
+        SUM(CASE WHEN m.severity='alerta' THEN 1 ELSE 0 END) as alerta_count
+      FROM zones z
+      LEFT JOIN machines ma ON ma.zone_id=z.id
+      LEFT JOIN measurements m ON m.machine_id=ma.id
+    `);
+    return r.rows[0];
+  }
 };
 
-module.exports = { db, Q };
+module.exports = { pool, Q, initDB };
