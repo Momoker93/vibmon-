@@ -44,6 +44,9 @@ async function initDB() {
         sort_order INTEGER DEFAULT 0
       );
 
+      -- Add ai_result column if not exists (migration)
+      ALTER TABLE measurements ADD COLUMN IF NOT EXISTS ai_result TEXT DEFAULT '';
+
       CREATE TABLE IF NOT EXISTS measurements (
         id TEXT PRIMARY KEY,
         machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
@@ -57,6 +60,7 @@ async function initDB() {
         severity TEXT DEFAULT 'normal',
         fault_type TEXT DEFAULT '',
         notes TEXT DEFAULT '',
+        ai_result TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT NOW(),
         created_by TEXT DEFAULT ''
       );
@@ -187,10 +191,10 @@ const Q = {
     `);
     return r.rows;
   },
-  insertMeasurement: async (id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy) => {
+  insertMeasurement: async (id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy, aiResult) => {
     await pool.query(
-      'INSERT INTO measurements (id,machine_id,component_id,date,point,vx,vy,vz,temperature,severity,fault_type,notes,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
-      [id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy]
+      'INSERT INTO measurements (id,machine_id,component_id,date,point,vx,vy,vz,temperature,severity,fault_type,notes,created_by,ai_result) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+      [id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy, aiResult||'']
     );
   },
   deleteMeasurement: async (id) => {

@@ -146,13 +146,15 @@ router.post('/components/:compId/measurements', requireAdmin, upload.array('imag
     const { machine_id, date, point, vx, vy, vz, temperature, severity, fault_type, notes } = req.body;
     if (!machine_id || !date) return res.status(400).json({ error: 'Faltan campos obligatorios' });
     const id = uid();
+    const { ai_result } = req.body;
     await Q.insertMeasurement(
       id, machine_id, req.params.compId,
       date, point || '',
       parseFloat(vx) || null, parseFloat(vy) || null, parseFloat(vz) || null,
       parseFloat(temperature) || null,
       severity || 'normal', fault_type || '', notes || '',
-      req.user ? req.user.username : 'admin'
+      req.user ? req.user.username : 'admin',
+      ai_result || ''
     );
     if (req.files && req.files.length) {
       for (const f of req.files) {

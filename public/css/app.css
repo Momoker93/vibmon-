@@ -218,3 +218,8 @@ input::placeholder { color: var(--tx3); }
   .ctabs { gap: 4px; }
   .ctab { font-size: 10px; padding: 5px 10px; }
 }
+
+/* Collapsible AI result */
+details summary::-webkit-details-marker { display: none; }
+details[open] summary span:last-child { transform: rotate(180deg); }
+details summary span:last-child { display: inline-block; transition: transform .2s; }

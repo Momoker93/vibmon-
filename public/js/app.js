@@ -639,11 +639,12 @@ async function saveMeas(cid, macId) {
   fd.append('severity', document.getElementById('fs-'+cid).value);
   fd.append('fault_type', document.getElementById('ff-'+cid).value);
   fd.append('notes', document.getElementById('fn-'+cid).value);
+  fd.append('ai_result', window['_aiResult_'+cid] || '');
   S.newImgs.forEach(img => fd.append('images', img.file));
   try {
     const saved = await API.postForm('/components/'+cid+'/measurements', fd);
     S.measurements = await API.get('/components/'+cid+'/measurements');
-    S.newImgs=[]; cancelMeas(cid);
+    S.newImgs=[]; window['_aiResult_'+cid]=''; cancelMeas(cid);
     renderCompCharts(cid); renderHistory(cid); updateMacKPIs();
     updateTabSev(cid);
     const maxV=Math.max(parseFloat(vx)||0,parseFloat(vy)||0,parseFloat(vz)||0);
@@ -744,10 +745,15 @@ async function renderMeasDetail(measId) {
       ${m.notes?`<div style="margin-top:10px"><div style="font-size:10px;color:var(--tx2)">OBSERVACIONES</div><p style="font-size:13px;color:var(--tx2);margin-top:4px;line-height:1.6">${m.notes}</p></div>`:''}
       ${m.created_by?`<div style="margin-top:10px;font-size:10px;color:var(--tx3)">Registrado por: ${m.created_by} · ${new Date(m.created_at).toLocaleString('es-ES')}</div>`:''}
     </div>
-    ${m.ai_result?`<div style="background:linear-gradient(135deg,rgba(0,68,170,.15),rgba(0,136,255,.08));border:1px solid rgba(0,136,255,.3);border-radius:10px;padding:16px;margin-bottom:12px">
-      <div style="font-family:var(--mono);font-size:10px;color:#4499ff;letter-spacing:2px;margin-bottom:10px">🤖 ANÁLISIS IA</div>
-      <div style="font-size:13px;color:var(--tx);line-height:1.7">${m.ai_result}</div>
-    </div>`:''}
+    ${m.ai_result?`<details style="background:linear-gradient(135deg,rgba(0,68,170,.12),rgba(0,136,255,.06));border:1px solid rgba(0,136,255,.3);border-radius:10px;margin-bottom:12px;overflow:hidden">
+      <summary style="padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;list-style:none;user-select:none">
+        <span style="font-family:var(--mono);font-size:10px;color:#4499ff;letter-spacing:2px;flex:1">🤖 ANÁLISIS IA — VER DIAGNÓSTICO COMPLETO</span>
+        <span style="color:#4499ff;font-size:14px">▼</span>
+      </summary>
+      <div style="padding:0 16px 16px;border-top:1px solid rgba(0,136,255,.2);margin-top:0">
+        <div style="margin-top:12px;font-size:12px;color:var(--tx);line-height:1.9;white-space:pre-line">${m.ai_result}</div>
+      </div>
+    </details>`:''}
     ${imgHtml}`;
   showView('v-meas');
 }
@@ -985,7 +991,10 @@ async function analyzeAI(cid) {
       <div style="font-size:11px;color:var(--tx2);line-height:1.6;padding:9px;background:rgba(0,0,0,.2);border-radius:6px;margin-bottom:8px">${r.explicacion}</div>
       <div style="font-size:11px;color:var(--ac);padding:8px;background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15);border-radius:6px">💡 ${r.accionRecomendada}</div>
     </div>`;
-    document.getElementById('ai-res-'+cid).style.display='block'; toast('✓ Análisis completado');
+    document.getElementById('ai-res-'+cid).style.display='block';
+    // Store AI result text for saving with measurement
+    window['_aiResult_'+cid] = `Diagnóstico: ${r.diagnostico}\nFalla: ${r.tipoFalla}\nSeveridad: ${(r.severidadSugerida||'').toUpperCase()}\nArmónicos: ${(r.armonicosDetectados||[]).join(', ')||'—'}\nFrecuencia dominante: ${r.frecuenciaDominante||'—'}\n\n${r.explicacion}\n\nAcción recomendada: ${r.accionRecomendada}`;
+    toast('✓ Análisis completado');
   }catch(e){
     document.getElementById('ai-res-'+cid).innerHTML=`<div class="aibox" style="border-color:rgba(255,51,85,.3)"><div style="color:var(--rd);font-size:12px">✕ ${e.message}</div></div>`;
     document.getElementById('ai-res-'+cid).style.display='block'; toast('Error IA','err');
