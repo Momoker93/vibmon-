@@ -421,6 +421,20 @@ function buildPanel(c, mac) {
       <canvas id="tc-${c.id}" height="80" style="display:none"></canvas>
       <div id="te-${c.id}" style="text-align:center;color:var(--tx2);font-size:11px;padding:18px">Sin datos de temperatura suficientes (≥2)</div>
     </div>
+
+    <!-- AI LAST ANALYSIS -->
+    <div id="ai-last-${c.id}" style="display:none">
+      <details style="background:linear-gradient(135deg,rgba(0,68,170,.12),rgba(0,136,255,.06));border:1px solid rgba(0,136,255,.3);border-radius:10px;margin-bottom:12px;overflow:hidden">
+        <summary style="padding:13px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;list-style:none;user-select:none">
+          <span style="font-family:var(--mono);font-size:10px;color:#4499ff;letter-spacing:2px;flex:1">🤖 ÚLTIMO ANÁLISIS IA</span>
+          <span style="color:#4499ff;font-size:14px">▼</span>
+        </summary>
+        <div style="padding:0 16px 16px;border-top:1px solid rgba(0,136,255,.2)">
+          <div id="ai-last-content-${c.id}" style="margin-top:12px;font-size:12px;color:var(--tx);line-height:1.9;white-space:pre-line"></div>
+        </div>
+      </details>
+    </div>
+
     ${isAdmin() ? `
     <div class="card" id="addm-${c.id}" style="display:none">
       <div class="card-title">+ Nueva medición — ${c.name}</div>
@@ -670,6 +684,14 @@ function renderHistory(cid) {
   const el=document.getElementById('hist-'+cid);
   const cnt=document.getElementById('hcount-'+cid);
   if(cnt)cnt.textContent=ms.length?`(${ms.length})`:'';
+  // Show last AI result in component panel
+  const lastWithAI = S.measurements.filter(m=>m.ai_result).sort((a,b)=>b.date.localeCompare(a.date))[0];
+  const aiBlock = document.getElementById('ai-last-'+cid);
+  const aiContent = document.getElementById('ai-last-content-'+cid);
+  if(aiBlock && aiContent && lastWithAI?.ai_result) {
+    aiBlock.style.display='block';
+    aiContent.textContent = lastWithAI.ai_result;
+  } else if(aiBlock) { aiBlock.style.display='none'; }
   if(!ms.length){el.innerHTML='<p style="color:var(--tx2);font-size:12px;padding:8px 0">Sin mediciones aún.</p>';return;}
   el.innerHTML=ms.map(m=>{
     const imgs=m.images||[];
