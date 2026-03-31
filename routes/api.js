@@ -144,7 +144,7 @@ router.post('/components/:compId/measurements', requireAdmin, upload.array('imag
   });
 });
 
-router.delete('/measurements/:id', requireAdmin, (req, res) => {
+router.delete('/measurements/:id', requireAdmin, async (req, res) => {
   const m = Q.getMeasurement.get(req.params.id);
   if (!m) return res.status(404).json({ error: 'No encontrada' });
   // Delete images from Cloudinary
