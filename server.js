@@ -38,6 +38,13 @@ app.use('/api', apiLimiter);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api', require('./routes/api'));
 
+// Serve Anthropic key to authenticated frontend (injected as JS variable)
+app.get('/config.js', (req, res) => {
+  const key = process.env.ANTHROPIC_API_KEY || '';
+  res.setHeader('Content-Type', 'application/javascript');
+  res.send(`window._ANTHROPIC_KEY = ${JSON.stringify(key)};`);
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });

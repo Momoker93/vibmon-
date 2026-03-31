@@ -756,8 +756,8 @@ async function deleteMeas() {
 
 // ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 async function analyzeAI(cid) {
-  const claudeKey = prompt('Introduce tu Anthropic API Key (sk-ant-...):\n\nPuedes configurarla permanentemente en ⚙ Config del servidor.');
-  if(!claudeKey) return;
+  const claudeKey = window._ANTHROPIC_KEY;
+  if(!claudeKey) { toast('Análisis IA no disponible. Configura la API Key en el servidor.', 'err'); return; }
   if(!S.newImgs.length){toast('Sube al menos una imagen','err');return;}
   const mac=S.curMachine, comp=mac?.components?.find(c=>c.id===cid);
   const btn=document.getElementById('ai-btn-'+cid);
