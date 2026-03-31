@@ -9,16 +9,33 @@ const { initDB } = require('./database');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust Render's proxy
+app.set('trust proxy', 1);
+
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
+app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: 'Demasiados intentos.' } }));
-app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 300 }));
+// Rate limiting with proxy support
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Espera 15 minutos.' }
+});
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+app.use('/api/auth', authLimiter);
+app.use('/api', apiLimiter);
 
 app.use(express.static(path.join(__dirname, 'public')));
-
 app.use('/api', require('./routes/api'));
 
 app.get('*', (req, res) => {
