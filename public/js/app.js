@@ -401,6 +401,7 @@ async function goMachineById(id) {
   renderCompTabs();
   showView('v-machine');
   if(S.curMachine.components?.length) activateComp(S.curMachine.components[0].id);
+  updateCompTabColors(); // async, updates in background
 }
 function goMachine() { if(S.curMachine) goMachineById(S.curMachine.id); }
 function renderMacKPIs() {
@@ -416,6 +417,36 @@ function renderCompTabs() {
   document.getElementById('comp-tabs').innerHTML = mac.components.map(c =>
     `<div class="ctab" id="tab-${c.id}" onclick="activateComp('${c.id}')">${c.name}</div>`).join('');
   document.getElementById('comp-panels').innerHTML = mac.components.map(c => buildPanel(c, mac)).join('');
+}
+
+async function updateCompTabColors() {
+  const mac = S.curMachine;
+  if(!mac?.components?.length) return;
+  for(const c of mac.components) {
+    const tab = document.getElementById('tab-'+c.id);
+    if(!tab) continue;
+    try {
+      const ms = await API.get('/components/'+c.id+'/measurements');
+      if(ms.length === 0) {
+        // No measurements - grey out slightly
+        tab.style.opacity = '0.5';
+        tab.style.fontStyle = 'italic';
+        tab.title = 'Sin mediciones';
+      } else {
+        tab.style.opacity = '1';
+        tab.style.fontStyle = 'normal';
+        // Color based on worst severity
+        const worst = ms.reduce((w,m) => {
+          if(m.severity==='critico') return 'critico';
+          if(m.severity==='alerta' && w!=='critico') return 'alerta';
+          return w;
+        }, 'normal');
+        if(worst==='critico') { tab.classList.add('tc'); tab.style.opacity='1'; }
+        else if(worst==='alerta') { tab.classList.add('ta'); tab.style.opacity='1'; }
+        tab.title = `${ms.length} medición${ms.length!==1?'es':''}`;
+      }
+    } catch(e) {}
+  }
 }
 function buildPanel(c, mac) {
   return `<div class="cpanel" id="panel-${c.id}">
@@ -519,7 +550,15 @@ function buildPanel(c, mac) {
       <span style="font-size:11px;color:var(--tx2)">👁 Solo lectura</span>
     </div>`}
     <div class="card">
-      <div class="card-title">📋 Historial <span id="hcount-${c.id}" style="font-weight:400;color:var(--tx2)"></span></div>
+      <div class="card-title">📋 Historial <span id="hcount-${c.id}" style="font-weight:400;color:var(--tx2)"></span>
+        <button class="btn bai xs" id="analyze-all-btn-${c.id}" onclick="analyzeAllMeasurements('${c.id}')" style="margin-left:auto">🤖 Analizar todas</button>
+      </div>
+      <div id="analyze-all-prog-${c.id}" style="display:none;margin-bottom:10px">
+        <div style="background:var(--s2);border-radius:4px;height:6px;overflow:hidden">
+          <div id="analyze-all-bar-${c.id}" style="background:var(--ac);height:100%;width:0%;transition:width .3s;border-radius:4px"></div>
+        </div>
+        <div id="analyze-all-status-${c.id}" style="font-size:10px;color:var(--tx2);margin-top:4px"></div>
+      </div>
       <div id="hist-${c.id}"></div>
     </div>
   </div>`;
@@ -1200,6 +1239,89 @@ async function startMultiFolderImport() {
   toast(`✅ ${totalMeas} mediciones importadas`, 'ok', 6000);
   document.getElementById('bi-start').style.display = '';
   goZones();
+}
+
+
+// ── ANALYZE ALL MEASUREMENTS ──────────────────────────────────────────────────
+async function analyzeAllMeasurements(cid) {
+  const ms = S.measurements.filter(m => !m.ai_result);
+  if(!ms.length) { toast('Todas las mediciones ya tienen análisis IA', 'info'); return; }
+  if(!confirm(`¿Analizar ${ms.length} mediciones sin análisis IA?\nEsto puede tardar ${ms.length*4} segundos aproximadamente.`)) return;
+
+  const prog = document.getElementById('analyze-all-prog-'+cid);
+  const bar = document.getElementById('analyze-all-bar-'+cid);
+  const status = document.getElementById('analyze-all-status-'+cid);
+  const btn = document.getElementById('analyze-all-btn-'+cid);
+
+  prog.style.display = 'block';
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Analizando...';
+
+  let done=0;
+  for(const m of ms) {
+    bar.style.width = Math.round((done/ms.length)*100)+'%';
+    status.textContent = `Analizando ${done+1}/${ms.length}...`;
+
+    try {
+      // Get images for this measurement
+      const imgs = (m.images||[]).filter(i=>i);
+      if(!imgs.length) { done++; continue; }
+
+      // Fetch images and convert to base64
+      const toB64fromUrl = async url => {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.readAsDataURL(blob);
+        });
+      };
+
+      const b64imgs = await Promise.all(imgs.slice(0,2).map(toB64fromUrl));
+      const comp = S.curMachine?.components?.find(c=>c.id===m.component_id);
+
+      const aiRes = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+API._token },
+        body: JSON.stringify({
+          images: b64imgs,
+          machineName: S.curMachine?.name,
+          compName: comp?.name
+        })
+      });
+      const ai = await aiRes.json();
+      if(ai.error) throw new Error(ai.error);
+
+      const aiResult = `Diagnóstico: ${ai.diagnostico}\nFalla: ${ai.tipoFalla}\nSeveridad: ${(ai.severidadSugerida||'').toUpperCase()}\n\n${ai.explicacion}\n\nAcción recomendada: ${ai.accionRecomendada}`;
+
+      // Update measurement with AI result
+      await API.put('/measurements/'+m.id, {
+        date: m.date, point: m.point||'',
+        vx: ai.vxDetectado&&ai.vxDetectado!=='null' ? parseFloat(ai.vxDetectado).toFixed(2) : m.vx||'',
+        vy: ai.vyDetectado&&ai.vyDetectado!=='null' ? parseFloat(ai.vyDetectado).toFixed(2) : m.vy||'',
+        vz: ai.vzDetectado&&ai.vzDetectado!=='null' ? parseFloat(ai.vzDetectado).toFixed(2) : m.vz||'',
+        temperature: m.temperature||'',
+        severity: ai.severidadSugerida||m.severity,
+        fault_type: ai.tipoFalla||m.fault_type||'',
+        notes: m.notes||'',
+        ai_result: aiResult
+      });
+      done++;
+    } catch(e) { done++; console.error('AI error for measurement '+m.id, e); }
+  }
+
+  bar.style.width = '100%';
+  status.textContent = `✅ ${done} mediciones analizadas`;
+  btn.disabled = false;
+  btn.innerHTML = '🤖 Analizar todas';
+
+  // Refresh
+  S.measurements = await API.get('/components/'+cid+'/measurements');
+  renderHistory(cid);
+  renderCompCharts(cid);
+  updateMacKPIs();
+  toast(`✅ ${done} mediciones analizadas con IA`, 'ok', 4000);
 }
 
 // ── EDIT MEASUREMENT ──────────────────────────────────────────────────────────

@@ -107,9 +107,24 @@ router.put('/machines/:id', requireAdmin, async (req, res) => {
     const { name, type, rpm, notes, components } = req.body;
     await Q.updateMachine(name, type || '', rpm || null, notes || '', req.params.id);
     if (components) {
-      await Q.deleteComponentsByMachine(req.params.id);
+      // SAFE: only add NEW components, never delete existing ones with measurements
+      const existing = await Q.getComponentsByMachine(req.params.id);
+      const existingNames = existing.map(c => c.name.toLowerCase());
       for (let i = 0; i < components.length; i++) {
-        await Q.insertComponent(components[i].id || uid(), req.params.id, components[i].name, i);
+        const c = components[i];
+        const alreadyExists = existing.find(e =>
+          e.id === c.id || e.name.toLowerCase() === c.name.toLowerCase()
+        );
+        if (!alreadyExists) {
+          // Only insert truly new components
+          await Q.insertComponent(c.id || uid(), req.params.id, c.name, i);
+        } else {
+          // Update sort order only
+          await require('../database').pool.query(
+            'UPDATE components SET sort_order=$1 WHERE id=$2',
+            [i, alreadyExists.id]
+          );
+        }
       }
     }
     res.json({ ok: true });
@@ -172,11 +187,11 @@ router.post('/components/:compId/measurements', requireAdmin, upload.array('imag
 
 router.put('/measurements/:id', requireAdmin, async (req, res) => {
   try {
-    const { date, point, vx, vy, vz, temperature, severity, fault_type, notes } = req.body;
+    const { date, point, vx, vy, vz, temperature, severity, fault_type, notes, ai_result } = req.body;
     await require('../database').pool.query(
-      'UPDATE measurements SET date=$1,point=$2,vx=$3,vy=$4,vz=$5,temperature=$6,severity=$7,fault_type=$8,notes=$9 WHERE id=$10',
+      'UPDATE measurements SET date=$1,point=$2,vx=$3,vy=$4,vz=$5,temperature=$6,severity=$7,fault_type=$8,notes=$9,ai_result=$10 WHERE id=$11',
       [date, point||'', parseFloat(vx)||null, parseFloat(vy)||null, parseFloat(vz)||null,
-       parseFloat(temperature)||null, severity||'normal', fault_type||'', notes||'', req.params.id]
+       parseFloat(temperature)||null, severity||'normal', fault_type||'', notes||'', ai_result||'', req.params.id]
     );
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
