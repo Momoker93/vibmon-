@@ -44,9 +44,6 @@ async function initDB() {
         sort_order INTEGER DEFAULT 0
       );
 
-      -- Add ai_result column if not exists (migration)
-      ALTER TABLE measurements ADD COLUMN IF NOT EXISTS ai_result TEXT DEFAULT '';
-
       CREATE TABLE IF NOT EXISTS measurements (
         id TEXT PRIMARY KEY,
         machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
@@ -74,6 +71,11 @@ async function initDB() {
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
+
+    // Safe migration - add ai_result column if not exists
+    try {
+      await client.query("ALTER TABLE measurements ADD COLUMN IF NOT EXISTS ai_result TEXT DEFAULT ''");
+    } catch(e) { /* column may already exist */ }
 
     // Seed admin
     const existing = await client.query('SELECT id FROM users WHERE username=$1', [process.env.ADMIN_USER || 'admin']);
