@@ -1,0 +1,6 @@
+node_modules/
+.env
+vibmon.db
+uploads/
+*.log
+.DS_Store
