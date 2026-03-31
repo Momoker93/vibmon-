@@ -332,7 +332,19 @@ router.post('/analyze', requireAdmin, async (req, res) => {
       return { type: 'image', source: { type: 'base64', media_type: mime, data: data } };
     });
 
-    const prompt = 'Eres experto en análisis de vibraciones industrial. Analiza ' + (images.length > 1 ? 'estas imágenes' : 'esta imagen') + ' del componente "' + (compName||'?') + '" de la máquina "' + (machineName||'?') + '"' + (machineType ? ' (' + machineType + ')' : '') + (machineRpm ? ' a ' + machineRpm + ' RPM' : '') + '.\nSi hay valores numéricos X/Y/Z en mm/s extráelos. Si hay espectro FFT analiza los picos.\nResponde SOLO con JSON sin markdown:\n{"vxDetectado":"número o null","vyDetectado":"número o null","vzDetectado":"número o null","temperaturaDetectada":"número °C o null","frecuenciaDominante":"Hz o null","armonicosDetectados":[],"diagnostico":"1 frase","tipoFalla":"Desbalance (dominante 1X)|Desalineación (dominante 2X)|Aflojamiento mecánico (armónicos múltiples)|Falla rodamiento (BPFO/BPFI/BSF)|Falla engranaje (GMF)|Resonancia|Rozamiento (rub, 0.5X)|Problema eléctrico (2×línea)|Normal / Sin falla|No determinado","severidadSugerida":"normal|alerta|critico","explicacion":"2-3 frases","accionRecomendada":"acción concreta"}';
+        const prompt = `Eres un experto en análisis de vibraciones industriales. Tu tarea es ÚNICAMENTE leer los valores numéricos que aparecen en pantalla.
+
+INSTRUCCIONES CRÍTICAS:
+- La imagen muestra la pantalla de un analizador de vibraciones (Bearing Defender u similar)
+- Los colores de fondo (verde, rojo, amarillo) son indicadores del ANALIZADOR, NO reflejan el estado físico de la máquina
+- IGNORA completamente el color de fondo, el estado visual de la máquina o cualquier elemento físico
+- SOLO extrae los números que ves en pantalla para X, Y, Z en mm/s ISO
+- Si hay una segunda imagen con espectro FFT, analiza los picos de frecuencia
+
+Componente: ${compName||'?'} | Máquina: ${machineName||'?'}${machineType?' ('+machineType+')':''}${machineRpm?' a '+machineRpm+' RPM':''}
+
+Responde SOLO con JSON válido sin markdown:
+{"vxDetectado":"número con 2 decimales o null","vyDetectado":"número con 2 decimales o null","vzDetectado":"número con 2 decimales o null","temperaturaDetectada":"número o null","frecuenciaDominante":"Hz o null","armonicosDetectados":[],"diagnostico":"diagnóstico basado SOLO en los valores numéricos medidos","tipoFalla":"Desbalance (dominante 1X)|Desalineación (dominante 2X)|Aflojamiento mecánico (armónicos múltiples)|Falla rodamiento (BPFO/BPFI/BSF)|Falla engranaje (GMF)|Resonancia|Rozamiento (rub, 0.5X)|Problema eléctrico (2×línea)|Normal / Sin falla|No determinado","severidadSugerida":"normal si max<2.3 | alerta si max entre 2.3-4.5 | critico si max>4.5","explicacion":"explicación técnica basada en los valores numéricos leídos y el espectro si disponible","accionRecomendada":"acción recomendada según ISO 10816"}`;
 
     const https = require('https');
     const body = JSON.stringify({
