@@ -105,7 +105,7 @@ const APP = {
     document.getElementById('hdr').style.display = 'flex';
     document.getElementById('app-content').style.display = 'block';
     document.getElementById('ubadge').textContent = S.user.role==='admin' ? `👤 ${S.user.username.toUpperCase()}` : '👁 SOLO LECTURA';
-    ['btn-exp','btn-imp','btn-cfg'].forEach(id => {
+    ['btn-exp','btn-imp','btn-cfg','btn-bulk'].forEach(id => {
       const e = document.getElementById(id); if(e) e.style.display = isAdmin() ? '' : 'none';
     });
     goZones();
@@ -760,6 +760,158 @@ async function deleteMeas() {
   } catch(e) { toast(e.message,'err'); }
 }
 
+
+
+// ── BULK IMPORT ───────────────────────────────────────────────────────────────
+let bulkFiles = [], bulkPairs = [];
+
+function openBulkImport() {
+  resetBulk();
+  // Populate zones
+  const zSel = document.getElementById('bi-zone');
+  zSel.innerHTML = '<option value="">— Seleccionar zona —</option>' +
+    S.zones.map(z => `<option value="${z.id}">${z.name}</option>`).join('');
+  document.getElementById('bi-machine').innerHTML = '<option value="">— Seleccionar máquina —</option>';
+  document.getElementById('bi-comp').innerHTML = '<option value="">— Seleccionar componente —</option>';
+  openModal('mbulk');
+}
+
+function resetBulk() {
+  bulkFiles = []; bulkPairs = [];
+  document.getElementById('bi-preview').style.display = 'none';
+  document.getElementById('bi-progress').style.display = 'none';
+  document.getElementById('bi-start').disabled = true;
+  document.getElementById('bi-bar').style.width = '0%';
+  document.getElementById('bi-status').textContent = '';
+}
+
+async function loadBulkMachines() {
+  const zid = document.getElementById('bi-zone').value;
+  if(!zid) return;
+  const machines = await API.get('/zones/' + zid + '/machines');
+  document.getElementById('bi-machine').innerHTML = '<option value="">— Seleccionar máquina —</option>' +
+    machines.map(m => `<option value="${m.id}" data-comps='${JSON.stringify(m.components)}'>${m.name}</option>`).join('');
+  document.getElementById('bi-comp').innerHTML = '<option value="">— Seleccionar componente —</option>';
+}
+
+function loadBulkComponents() {
+  const sel = document.getElementById('bi-machine');
+  const opt = sel.options[sel.selectedIndex];
+  if(!opt || !opt.value) return;
+  const comps = JSON.parse(opt.dataset.comps || '[]');
+  document.getElementById('bi-comp').innerHTML = '<option value="">— Seleccionar componente —</option>' +
+    comps.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+function handleBulkFiles(evt) {
+  bulkFiles = Array.from(evt.target.files);
+  // Sort by filename (date is in the name)
+  bulkFiles.sort((a, b) => a.name.localeCompare(b.name));
+  
+  // Pair files: odd index = values screenshot, even index = spectrum
+  bulkPairs = [];
+  for(let i = 0; i < bulkFiles.length; i += 2) {
+    const valImg = bulkFiles[i];
+    const specImg = bulkFiles[i+1] || null;
+    // Extract date from filename: Screenshot_20260330_072151 -> 2026-03-30
+    const dateMatch = valImg.name.match(/(\d{4})(\d{2})(\d{2})/);
+    const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : new Date().toISOString().slice(0,10);
+    bulkPairs.push({ valImg, specImg, date, index: (i/2)+1 });
+  }
+
+  // Show preview
+  document.getElementById('bi-preview').style.display = 'block';
+  document.getElementById('bi-pairs').innerHTML = bulkPairs.map(p => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid var(--br2)">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--tx2);width:24px">${p.index}</span>
+      <img src="${URL.createObjectURL(p.valImg)}" style="width:60px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--br)"/>
+      ${p.specImg ? `<img src="${URL.createObjectURL(p.specImg)}" style="width:60px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--br)"/>` : '<span style="font-size:10px;color:var(--tx3)">Sin espectro</span>'}
+      <span style="font-family:var(--mono);font-size:11px;color:var(--ac)">${p.date}</span>
+    </div>`).join('');
+
+  document.getElementById('bi-start').disabled = 
+    !document.getElementById('bi-comp').value || bulkPairs.length === 0;
+  evt.target.value = '';
+}
+
+async function startBulkImport() {
+  const compId = document.getElementById('bi-comp').value;
+  const machSel = document.getElementById('bi-machine');
+  const machId = machSel.value;
+  if(!compId || !machId || !bulkPairs.length) { toast('Selecciona zona, máquina, componente e imágenes', 'err'); return; }
+
+  document.getElementById('bi-start').disabled = true;
+  document.getElementById('bi-progress').style.display = 'block';
+
+  let done = 0;
+  for(const pair of bulkPairs) {
+    try {
+      document.getElementById('bi-status').textContent = `Procesando medición ${pair.index} de ${bulkPairs.length}...`;
+      document.getElementById('bi-bar').style.width = Math.round((done/bulkPairs.length)*100) + '%';
+
+      // Convert images to base64 for AI analysis
+      const toBase64 = file => new Promise((res, rej) => {
+        const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file);
+      });
+
+      const valB64 = await toBase64(pair.valImg);
+      const specB64 = pair.specImg ? await toBase64(pair.specImg) : null;
+      const images = specB64 ? [valB64, specB64] : [valB64];
+
+      // Use AI to extract values
+      let vx='', vy='', vz='', temp='', severity='normal', fault='';
+      if(process?.env?.ANTHROPIC_API_KEY || true) {
+        try {
+          const aiRes = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API._token },
+            body: JSON.stringify({ images, machineName: machSel.options[machSel.selectedIndex]?.text, compName: document.getElementById('bi-comp').options[document.getElementById('bi-comp').selectedIndex]?.text })
+          });
+          const ai = await aiRes.json();
+          if(!ai.error) {
+            if(ai.vxDetectado && ai.vxDetectado !== 'null') vx = parseFloat(ai.vxDetectado).toFixed(2);
+            if(ai.vyDetectado && ai.vyDetectado !== 'null') vy = parseFloat(ai.vyDetectado).toFixed(2);
+            if(ai.vzDetectado && ai.vzDetectado !== 'null') vz = parseFloat(ai.vzDetectado).toFixed(2);
+            if(ai.temperaturaDetectada && ai.temperaturaDetectada !== 'null') temp = parseFloat(ai.temperaturaDetectada).toFixed(1);
+            if(ai.severidadSugerida) severity = ai.severidadSugerida;
+            if(ai.tipoFalla) fault = ai.tipoFalla;
+          }
+        } catch(e) { /* continue without AI */ }
+      }
+
+      // Save measurement with images
+      const fd = new FormData();
+      fd.append('machine_id', machId);
+      fd.append('date', pair.date);
+      fd.append('vx', vx); fd.append('vy', vy); fd.append('vz', vz);
+      fd.append('temperature', temp);
+      fd.append('severity', severity);
+      fd.append('fault_type', fault);
+      fd.append('notes', 'Importación masiva - ' + pair.valImg.name);
+      fd.append('images', pair.valImg);
+      if(pair.specImg) fd.append('images', pair.specImg);
+
+      await API.postForm('/components/' + compId + '/measurements', fd);
+      done++;
+    } catch(e) {
+      console.error('Error en medición ' + pair.index + ':', e);
+      done++;
+    }
+  }
+
+  document.getElementById('bi-bar').style.width = '100%';
+  document.getElementById('bi-status').textContent = `✓ ${done} mediciones importadas correctamente`;
+  document.getElementById('bi-start').disabled = false;
+  toast(`✓ ${done} mediciones importadas`, 'ok', 5000);
+  
+  // Refresh if we're viewing this machine
+  if(S.curMachine?.id === machId) {
+    S.measurements = await API.get('/components/' + compId + '/measurements');
+    renderHistory(compId);
+    renderCompCharts(compId);
+    updateMacKPIs();
+  }
+}
 
 // ── EDIT MEASUREMENT ──────────────────────────────────────────────────────────
 function openEditMeas() {
