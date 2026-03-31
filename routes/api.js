@@ -302,4 +302,60 @@ router.get('/machines/:id/pdf', optionalAuth, async (req, res) => {
   }
 });
 
+
+// ── AI ANALYSIS ───────────────────────────────────────────────────────────────
+router.post('/analyze', requireAdmin, async (req, res) => {
+  try {
+    const { images, machineName, machineType, machineRpm, compName } = req.body;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(400).json({ error: 'API Key de IA no configurada en el servidor' });
+    if (!images || !images.length) return res.status(400).json({ error: 'Sin imágenes para analizar' });
+
+    const imgContents = images.map(function(img) {
+      const parts = img.split(',');
+      const meta = parts[0]; // data:image/jpeg;base64
+      const data = parts[1];
+      const mime = meta.split(':')[1].split(';')[0];
+      return { type: 'image', source: { type: 'base64', media_type: mime, data: data } };
+    });
+
+    const prompt = 'Eres experto en análisis de vibraciones industrial. Analiza ' + (images.length > 1 ? 'estas imágenes' : 'esta imagen') + ' del componente "' + (compName||'?') + '" de la máquina "' + (machineName||'?') + '"' + (machineType ? ' (' + machineType + ')' : '') + (machineRpm ? ' a ' + machineRpm + ' RPM' : '') + '.\nSi hay valores numéricos X/Y/Z en mm/s extráelos. Si hay espectro FFT analiza los picos.\nResponde SOLO con JSON sin markdown:\n{"vxDetectado":"número o null","vyDetectado":"número o null","vzDetectado":"número o null","temperaturaDetectada":"número °C o null","frecuenciaDominante":"Hz o null","armonicosDetectados":[],"diagnostico":"1 frase","tipoFalla":"Desbalance (dominante 1X)|Desalineación (dominante 2X)|Aflojamiento mecánico (armónicos múltiples)|Falla rodamiento (BPFO/BPFI/BSF)|Falla engranaje (GMF)|Resonancia|Rozamiento (rub, 0.5X)|Problema eléctrico (2×línea)|Normal / Sin falla|No determinado","severidadSugerida":"normal|alerta|critico","explicacion":"2-3 frases","accionRecomendada":"acción concreta"}';
+
+    const https = require('https');
+    const body = JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 900,
+      messages: [{ role: 'user', content: [...imgContents, { type: 'text', text: prompt }] }]
+    });
+
+    const result = await new Promise(function(resolve, reject) {
+      const options = {
+        hostname: 'api.anthropic.com',
+        path: '/v1/messages',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Length': Buffer.byteLength(body)
+        }
+      };
+      const req2 = https.request(options, function(r) {
+        let data = '';
+        r.on('data', function(chunk) { data += chunk; });
+        r.on('end', function() { resolve(JSON.parse(data)); });
+      });
+      req2.on('error', reject);
+      req2.write(body);
+      req2.end();
+    });
+
+    if (result.error) return res.status(400).json({ error: result.error.message });
+    const text = result.content.map(function(c) { return c.text || ''; }).join('').replace(/```json|```/g, '').trim();
+    res.json(JSON.parse(text));
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

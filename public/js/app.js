@@ -756,24 +756,19 @@ async function deleteMeas() {
 
 // ── AI ANALYSIS ───────────────────────────────────────────────────────────────
 async function analyzeAI(cid) {
-  const claudeKey = window._ANTHROPIC_KEY;
-  if(!claudeKey) { toast('Análisis IA no disponible. Configura la API Key en el servidor.', 'err'); return; }
   if(!S.newImgs.length){toast('Sube al menos una imagen','err');return;}
   const mac=S.curMachine, comp=mac?.components?.find(c=>c.id===cid);
   const btn=document.getElementById('ai-btn-'+cid);
   btn.innerHTML='<span class="spin"></span> Analizando...'; btn.disabled=true;
   document.getElementById('ai-res-'+cid).style.display='none';
   try {
-    const imgC=S.newImgs.map(img=>({type:'image',source:{type:'base64',media_type:img.dataUrl.split(';')[0].split(':')[1],data:img.dataUrl.split(',')[1]}}));
-    const prompt=`Eres experto en análisis de vibraciones industrial. Analiza las imágenes del componente "${comp?.name||'?'}" de la máquina "${mac?.name||'?'}"${mac?.type?' ('+mac.type+')':''}${mac?.rpm?' a '+mac.rpm+' RPM':''}.
-Si hay valores numéricos X/Y/Z en mm/s extráelos. Si hay espectro FFT analiza los picos.
-Responde SOLO con JSON sin markdown:
-{"vxDetectado":"número o null","vyDetectado":"número o null","vzDetectado":"número o null","temperaturaDetectada":"número °C o null","frecuenciaDominante":"Hz o null","armonicosDetectados":[],"diagnostico":"1 frase","tipoFalla":"Desbalance (dominante 1X)|Desalineación (dominante 2X)|Aflojamiento mecánico (armónicos múltiples)|Falla rodamiento (BPFO/BPFI/BSF)|Falla engranaje (GMF)|Resonancia|Rozamiento (rub, 0.5X)|Problema eléctrico (2×línea)|Normal / Sin falla|No determinado","severidadSugerida":"normal|alerta|critico","explicacion":"2-3 frases","accionRecomendada":"acción concreta"}`;
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:900,messages:[{role:'user',content:[...imgC,{type:'text',text:prompt}]}]})});
-    const data=await res.json(); if(data.error)throw new Error(data.error.message);
-    const r=JSON.parse(data.content.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim());
+    const res=await fetch('/api/analyze',{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+API._token},
+      body:JSON.stringify({
+        images:S.newImgs.map(i=>i.dataUrl),
+        machineName:mac?.name, machineType:mac?.type, machineRpm:mac?.rpm, compName:comp?.name
+      })});
+    const r=await res.json(); if(r.error)throw new Error(r.error);
     if(r.vxDetectado&&r.vxDetectado!=='null')document.getElementById('vx-'+cid).value=parseFloat(r.vxDetectado).toFixed(2);
     if(r.vyDetectado&&r.vyDetectado!=='null')document.getElementById('vy-'+cid).value=parseFloat(r.vyDetectado).toFixed(2);
     if(r.vzDetectado&&r.vzDetectado!=='null')document.getElementById('vz-'+cid).value=parseFloat(r.vzDetectado).toFixed(2);
