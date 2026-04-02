@@ -358,8 +358,11 @@ async function deleteZone() {
 const DB_machines = {}; // cache
 
 async function goZone(zoneId, push) {
-  const zone = S.zones.find(z=>z.id===zoneId) || S.curZone;
-  if(zoneId) S.curZone = S.zones.find(z=>z.id===zoneId) || { id: zoneId };
+  // Ensure zones are loaded (e.g. when coming from zone-list)
+  if(zoneId && (!S.zones || !S.zones.length)) {
+    try { const d = await API.get('/zones'); S.zones = d.zones; } catch(e) {}
+  }
+  if(zoneId) S.curZone = S.zones.find(z=>z.id===zoneId) || S.curZone || { id: zoneId };
   showView('v-zone', push);
   document.getElementById('zone-title').textContent = (S.curZone?.icon||'📍')+' '+(S.curZone?.name||'Zona');
   document.getElementById('zone-desc').textContent = S.curZone?.description||'';
@@ -1199,6 +1202,14 @@ async function loadDashboardExtra(zones, stats) {
 
 // ── ALERT LIST VIEW ───────────────────────────────────────────────────────────
 async function showAlertList(severity) {
+  // Make sure we're on the dashboard view so alrt-sec is visible
+  const currentView = document.querySelector('.view.active')?.id;
+  if(currentView !== 'v-zones') {
+    await goZones(true);
+    // Small delay to let the view render
+    await new Promise(r => setTimeout(r, 100));
+  }
+
   const sec = document.getElementById('alrt-sec');
   const list = document.getElementById('alrt-list');
 
