@@ -219,8 +219,10 @@ async function loadAlerts() {
   try {
     const alerts = await API.get('/measurements/alerts');
     const sec = document.getElementById('alrt-sec');
+    // Always keep panel hidden on load - only show when user clicks filter buttons
+    // But update the KPI buttons to show counts
     if(!alerts.length) { sec.style.display='none'; return; }
-    sec.style.display = 'block';
+    sec.style.display = 'none'; // hidden by default, user opens with buttons
     document.getElementById('alrt-list').innerHTML = alerts.map(m => {
       const mx = Math.max(parseFloat(m.vx)||0,parseFloat(m.vy)||0,parseFloat(m.vz)||0);
       return `<div class="hr" onclick="openMeasFromAlert('${m.id}','${m.machine_id}','${m.component_id}')">
@@ -972,14 +974,22 @@ async function loadDashboardExtra(zones, stats) {
 
 // ── ALERT LIST VIEW ───────────────────────────────────────────────────────────
 async function showAlertList(severity) {
+  const sec = document.getElementById('alrt-sec');
+  const list = document.getElementById('alrt-list');
+
+  // If already showing same filter, toggle off
+  if(sec._currentFilter === severity && sec.style.display !== 'none') {
+    sec.style.display = 'none';
+    sec._currentFilter = null;
+    return;
+  }
+  sec._currentFilter = severity;
+
   const all = await API.get('/measurements/alerts');
   const filtered = severity === 'all' ? all : all.filter(m => m.severity === severity);
   const title = severity === 'critico' ? '🔴 Mediciones Críticas' : severity === 'alerta' ? '⚠️ Mediciones en Alerta' : '📋 Todas las Alertas';
   const color = severity === 'critico' ? 'var(--rd)' : 'var(--yw)';
 
-  // Show in alert section
-  const sec = document.getElementById('alrt-sec');
-  const list = document.getElementById('alrt-list');
   sec.style.display = 'block';
 
   if(!filtered.length) {
@@ -1477,7 +1487,8 @@ async function saveEditMeas() {
     temperature: document.getElementById('em-temp').value,
     severity: document.getElementById('em-severity').value,
     fault_type: document.getElementById('em-fault').value,
-    notes: document.getElementById('em-notes').value
+    notes: document.getElementById('em-notes').value,
+    ai_result: m.ai_result || ''  // ALWAYS preserve existing AI analysis
   };
   try {
     await API.put('/measurements/' + m.id, body);
@@ -1538,4 +1549,22 @@ async function analyzeAI(cid) {
 function openLB(src){document.getElementById('lb-img').src=src;openModal('mlb');}
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => APP.init());
+
+// ── THEME TOGGLE ──────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light');
+  localStorage.setItem('vibmon_theme', isLight ? 'light' : 'dark');
+  const btn = document.getElementById('btn-theme');
+  if(btn) btn.textContent = isLight ? '☀️' : '🌙';
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('vibmon_theme');
+  if(saved === 'light') {
+    document.body.classList.add('light');
+    const btn = document.getElementById('btn-theme');
+    if(btn) btn.textContent = '☀️';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => { initTheme(); APP.init(); });

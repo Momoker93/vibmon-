@@ -188,10 +188,17 @@ router.post('/components/:compId/measurements', requireAdmin, upload.array('imag
 router.put('/measurements/:id', requireAdmin, async (req, res) => {
   try {
     const { date, point, vx, vy, vz, temperature, severity, fault_type, notes, ai_result } = req.body;
+    // Get existing ai_result to preserve it if not provided
+    const existing = await require('../database').pool.query(
+      'SELECT ai_result FROM measurements WHERE id=$1', [req.params.id]
+    );
+    const existingAI = existing.rows[0]?.ai_result || '';
+    // Only update ai_result if explicitly provided with content, otherwise keep existing
+    const finalAI = (ai_result && ai_result.trim()) ? ai_result : existingAI;
     await require('../database').pool.query(
       'UPDATE measurements SET date=$1,point=$2,vx=$3,vy=$4,vz=$5,temperature=$6,severity=$7,fault_type=$8,notes=$9,ai_result=$10 WHERE id=$11',
       [date, point||'', parseFloat(vx)||null, parseFloat(vy)||null, parseFloat(vz)||null,
-       parseFloat(temperature)||null, severity||'normal', fault_type||'', notes||'', ai_result||'', req.params.id]
+       parseFloat(temperature)||null, severity||'normal', fault_type||'', notes||'', finalAI, req.params.id]
     );
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }

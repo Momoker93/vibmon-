@@ -237,3 +237,37 @@ details summary span:last-child { display: inline-block; transition: transform .
 
 /* ── HISTORY FILTERS ── */
 .card-title { flex-wrap: wrap; gap: 6px; }
+
+/* ── LIGHT MODE ── */
+body.light {
+  --bg: #f0f4f8; --s1: #ffffff; --s2: #e8eef4; --s3: #dde6ef;
+  --br: #c8d8e8; --br2: #dde6ef;
+  --tx: #1a2a3a; --tx2: #4a6a8a; --tx3: #8aaac8;
+  --ac: #0066cc; --gr: #00884c; --yw: #cc7700; --rd: #cc1133; --or: #cc5500;
+  --vx: #0066cc; --vy: #7744cc; --vz: #00884c;
+  color-scheme: light;
+}
+body.light #hdr {
+  background: linear-gradient(90deg, #1a2a3a, #0a1828 50%, #1a2a3a);
+}
+body.light .card { background: #fff; border-color: #c8d8e8; }
+body.light input, body.light select, body.light textarea {
+  background: #f8faff; color: #1a2a3a; border-color: #c8d8e8;
+}
+body.light .ctab { background: #e8eef4; color: #4a6a8a; border-color: #c8d8e8; }
+body.light .ctab.active { background: var(--ac); color: #fff; }
+body.light .zcard { background: #fff; border-color: #c8d8e8; }
+body.light .mcard { background: #fff; border-color: #c8d8e8; }
+body.light .mov > .mbox { background: #fff; }
+body.light #breadcrumb { color: #4a6a8a; }
+body.light .hr:hover { background: #e8eef4; }
+body.light .tag { background: #e8eef4; color: #4a6a8a; }
+body.light .xyz-cell.xyz-x { background: rgba(0,102,204,.06); }
+body.light .xyz-cell.xyz-y { background: rgba(119,68,204,.06); }
+body.light .xyz-cell.xyz-z { background: rgba(0,136,76,.06); }
+body.light #toast { background: #fff; border-color: #c8d8e8; }
+body.light .upz { border-color: #c8d8e8; }
+body.light .upz:hover { background: rgba(0,102,204,.04); }
+body.light #loading { background: #f0f4f8; }
+body.light .loading-logo { color: var(--ac); }
+body.light body::before { display: none; }
