@@ -248,8 +248,37 @@
     <!-- STEP 3: Review + import -->
     <div id="bi-step3" style="display:none">
       <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px;margin-bottom:10px">RESUMEN — LISTO PARA IMPORTAR</div>
-      <div id="bi-summary" style="max-height:200px;overflow-y:auto;border:1px solid var(--br);border-radius:8px;padding:10px;margin-bottom:12px"></div>
-      <div style="font-size:12px;color:var(--tx2);margin-bottom:14px" id="bi-summary-count"></div>
+      <div id="bi-summary" style="max-height:160px;overflow-y:auto;border:1px solid var(--br);border-radius:8px;padding:10px;margin-bottom:10px"></div>
+      <div style="font-size:12px;color:var(--tx2);margin-bottom:12px" id="bi-summary-count"></div>
+
+      <!-- Import mode selector -->
+      <div style="background:var(--s2);border:1px solid var(--br);border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px;margin-bottom:10px">MODO DE IMPORTACIÓN</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px;border-radius:8px;border:1px solid var(--br);transition:border-color .2s" id="mode-fast-label">
+            <input type="radio" name="bi-mode" value="fast" checked onchange="updateModeUI()" style="margin-top:2px;accent-color:var(--gr)"/>
+            <div>
+              <div style="font-weight:700;color:var(--gr);font-size:13px">⚡ Rápido sin IA</div>
+              <div style="font-size:11px;color:var(--tx2);margin-top:2px">Sube todas las imágenes en segundos. Analiza con IA después cuando quieras, medición por medición o todas a la vez.</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px;border-radius:8px;border:1px solid var(--br);transition:border-color .2s" id="mode-parallel-label">
+            <input type="radio" name="bi-mode" value="parallel" onchange="updateModeUI()" style="margin-top:2px;accent-color:var(--yw)"/>
+            <div>
+              <div style="font-weight:700;color:var(--yw);font-size:13px">⚡⚡⚡ Paralelo con IA (x3)</div>
+              <div style="font-size:11px;color:var(--tx2);margin-top:2px">Analiza 3 mediciones simultáneamente con IA. Más rápido que secuencial pero sigue tardando. Estimado: ~2s por medición.</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px;border-radius:8px;border:1px solid var(--br);transition:border-color .2s" id="mode-ai-label">
+            <input type="radio" name="bi-mode" value="ai" onchange="updateModeUI()" style="margin-top:2px;accent-color:var(--ac)"/>
+            <div>
+              <div style="font-weight:700;color:var(--ac);font-size:13px">🤖 Completo con IA (secuencial)</div>
+              <div style="font-size:11px;color:var(--tx2);margin-top:2px">Analiza cada medición con IA una a una. Más lento pero extrae X/Y/Z automáticamente. Estimado: ~5s por medición.</div>
+            </div>
+          </label>
+        </div>
+        <div id="bi-time-estimate" style="margin-top:10px;font-size:11px;color:var(--tx2);text-align:center;font-family:var(--mono)"></div>
+      </div>
     </div>
 
     <!-- Progress -->

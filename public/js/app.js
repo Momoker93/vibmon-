@@ -1119,6 +1119,20 @@ function biSkipMachine() {
   else showBiSummary();
 }
 
+function updateModeUI() {
+  const mode = document.querySelector('input[name="bi-mode"]:checked')?.value || 'fast';
+  const totalMeas = biConfirmed.reduce((a,m) => a+m.pairs.length, 0);
+  const est = mode==='fast' ? Math.ceil(totalMeas*0.5) : mode==='parallel' ? Math.ceil(totalMeas*2) : Math.ceil(totalMeas*5);
+  const estStr = est < 60 ? `~${est}s` : `~${Math.ceil(est/60)} min`;
+  const el = document.getElementById('bi-time-estimate');
+  if(el) el.textContent = `Tiempo estimado: ${estStr} para ${totalMeas} mediciones`;
+  // Highlight selected
+  ['fast','parallel','ai'].forEach(m => {
+    const lbl = document.getElementById('mode-'+m+'-label');
+    if(lbl) lbl.style.borderColor = m===mode ? 'var(--ac)' : 'var(--br)';
+  });
+}
+
 function showBiSummary() {
   document.getElementById('bi-step2').style.display = 'none';
   document.getElementById('bi-step3').style.display = 'block';
@@ -1127,6 +1141,7 @@ function showBiSummary() {
   const totalMeas = biConfirmed.reduce((a,m) => a+m.pairs.length, 0);
   document.getElementById('bi-summary-count').textContent =
     `${biConfirmed.length} máquinas · ${totalMeas} mediciones totales`;
+  setTimeout(updateModeUI, 50);
 
   document.getElementById('bi-summary').innerHTML = biConfirmed.map(m => `
     <div style="margin-bottom:10px">
@@ -1139,6 +1154,7 @@ function showBiSummary() {
 
 async function startMultiFolderImport() {
   if(!biConfirmed.length) { toast('No hay máquinas confirmadas','err'); return; }
+  const mode = document.querySelector('input[name="bi-mode"]:checked')?.value || 'fast';
   document.getElementById('bi-start').style.display = 'none';
   document.getElementById('bi-step3').style.display = 'none';
   document.getElementById('bi-progress').style.display = 'block';
@@ -1178,8 +1194,58 @@ async function startMultiFolderImport() {
       addLog(`  🔍 Encontrada: ${mac.name}`);
     }
 
-    // Process each pair
-    for(const pair of macData.pairs) {
+    // Process pairs based on mode
+    const pairsToProcess = macData.pairs;
+
+    if(mode === 'parallel') {
+      // Process in batches of 3 simultaneously
+      const batchSize = 3;
+      for(let b=0; b<pairsToProcess.length; b+=batchSize) {
+        const batch = pairsToProcess.slice(b, b+batchSize);
+        status.textContent = `${macData.folderName} — lote ${Math.floor(b/batchSize)+1} (${Math.min(b+batchSize,pairsToProcess.length)}/${pairsToProcess.length})`;
+        await Promise.all(batch.map(async pair => {
+          try {
+            const toB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(f);});
+            const imgs = [await toB64(pair.valImg)];
+            if(pair.specImg) imgs.push(await toB64(pair.specImg));
+            let vx='',vy='',vz='',temp='',severity='normal',fault='',aiResult='';
+            try {
+              const aiRes = await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API._token},
+                body:JSON.stringify({images:imgs,machineName:mac.name,compName:pair.compName})});
+              const ai = await aiRes.json();
+              if(!ai.error) {
+                if(ai.vxDetectado&&ai.vxDetectado!=='null') vx=parseFloat(ai.vxDetectado).toFixed(2);
+                if(ai.vyDetectado&&ai.vyDetectado!=='null') vy=parseFloat(ai.vyDetectado).toFixed(2);
+                if(ai.vzDetectado&&ai.vzDetectado!=='null') vz=parseFloat(ai.vzDetectado).toFixed(2);
+                if(ai.temperaturaDetectada&&ai.temperaturaDetectada!=='null') temp=parseFloat(ai.temperaturaDetectada).toFixed(1);
+                if(ai.severidadSugerida) severity=ai.severidadSugerida;
+                if(ai.tipoFalla) fault=ai.tipoFalla;
+                if(ai.diagnostico) aiResult=`Diagnóstico: ${ai.diagnostico}\nFalla: ${ai.tipoFalla}\nSeveridad: ${severity.toUpperCase()}\n\n${ai.explicacion}\n\nAcción: ${ai.accionRecomendada}`;
+              }
+            } catch(e) {}
+            const comp = mac.components?.find(c => c.name === pair.compName);
+            if(!comp) return;
+            const fd2 = new FormData();
+            fd2.append('machine_id',mac.id); fd2.append('date',pair.date);
+            fd2.append('vx',vx); fd2.append('vy',vy); fd2.append('vz',vz);
+            fd2.append('temperature',temp); fd2.append('severity',severity);
+            fd2.append('fault_type',fault); fd2.append('notes','Importación masiva');
+            fd2.append('ai_result',aiResult);
+            fd2.append('images',pair.valImg);
+            if(pair.specImg) fd2.append('images',pair.specImg);
+            await API.postForm('/components/'+comp.id+'/measurements', fd2);
+            totalMeas++; done++;
+            bar.style.width = Math.round((done/totalPairs)*100)+'%';
+            const sevIcon = severity==='critico'?'🔴':severity==='alerta'?'🟡':'🟢';
+            addLog(`  ${sevIcon} ${pair.compName} ${pair.date} X:${vx||'—'} Y:${vy||'—'} Z:${vz||'—'}`, 'var(--gr)');
+          } catch(e) { done++; addLog(`  ❌ ${pair.compName}: ${e.message}`, 'var(--rd)'); }
+        }));
+      }
+      continue; // skip the sequential loop below
+    }
+
+    // Sequential mode (fast or ai)
+    for(const pair of pairsToProcess) {
       done++;
       bar.style.width = Math.round((done/totalPairs)*100)+'%';
       status.textContent = `${macData.folderName} › ${pair.compName} (${done}/${totalPairs})`;
@@ -1189,27 +1255,34 @@ async function startMultiFolderImport() {
       if(!comp) { addLog(`  ⚠️ Componente no encontrado: ${pair.compName}`, 'var(--yw)'); continue; }
 
       try {
-        // Convert to base64 for AI
+        // Convert to base64
         const toB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(f);});
         const imgs = [await toB64(pair.valImg)];
         if(pair.specImg) imgs.push(await toB64(pair.specImg));
 
-        // AI analysis
+        // AI analysis based on mode
         let vx='',vy='',vz='',temp='',severity='normal',fault='',aiResult='';
-        try {
-          const aiRes = await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API._token},
-            body:JSON.stringify({images:imgs,machineName:mac.name,compName:pair.compName})});
-          const ai = await aiRes.json();
-          if(!ai.error) {
-            if(ai.vxDetectado&&ai.vxDetectado!=='null') vx=parseFloat(ai.vxDetectado).toFixed(2);
-            if(ai.vyDetectado&&ai.vyDetectado!=='null') vy=parseFloat(ai.vyDetectado).toFixed(2);
-            if(ai.vzDetectado&&ai.vzDetectado!=='null') vz=parseFloat(ai.vzDetectado).toFixed(2);
-            if(ai.temperaturaDetectada&&ai.temperaturaDetectada!=='null') temp=parseFloat(ai.temperaturaDetectada).toFixed(1);
-            if(ai.severidadSugerida) severity=ai.severidadSugerida;
-            if(ai.tipoFalla) fault=ai.tipoFalla;
-            if(ai.diagnostico) aiResult=`Diagnóstico: ${ai.diagnostico}\nFalla: ${ai.tipoFalla}\nSeveridad: ${severity.toUpperCase()}\n\n${ai.explicacion}\n\nAcción: ${ai.accionRecomendada}`;
-          }
-        } catch(e) { /* continue without AI */ }
+
+        const runAI = async () => {
+          try {
+            const aiRes = await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API._token},
+              body:JSON.stringify({images:imgs,machineName:mac.name,compName:pair.compName})});
+            const ai = await aiRes.json();
+            if(!ai.error) {
+              if(ai.vxDetectado&&ai.vxDetectado!=='null') vx=parseFloat(ai.vxDetectado).toFixed(2);
+              if(ai.vyDetectado&&ai.vyDetectado!=='null') vy=parseFloat(ai.vyDetectado).toFixed(2);
+              if(ai.vzDetectado&&ai.vzDetectado!=='null') vz=parseFloat(ai.vzDetectado).toFixed(2);
+              if(ai.temperaturaDetectada&&ai.temperaturaDetectada!=='null') temp=parseFloat(ai.temperaturaDetectada).toFixed(1);
+              if(ai.severidadSugerida) severity=ai.severidadSugerida;
+              if(ai.tipoFalla) fault=ai.tipoFalla;
+              if(ai.diagnostico) aiResult=`Diagnóstico: ${ai.diagnostico}\nFalla: ${ai.tipoFalla}\nSeveridad: ${severity.toUpperCase()}\n\n${ai.explicacion}\n\nAcción: ${ai.accionRecomendada}`;
+            }
+          } catch(e) {}
+        };
+
+        if(mode === 'ai') { await runAI(); }
+        // 'fast' mode: skip AI entirely
+        // 'parallel' handled outside this loop
 
         const fd2 = new FormData();
         fd2.append('machine_id',mac.id);
