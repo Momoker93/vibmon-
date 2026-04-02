@@ -158,10 +158,9 @@ router.get('/measurements/alerts', optionalAuth, async (req, res) => {
 
 router.post('/components/:compId/measurements', requireAdmin, upload.array('images', 10), async (req, res) => {
   try {
-    const { machine_id, date, point, vx, vy, vz, temperature, severity, fault_type, notes } = req.body;
+    const { machine_id, date, measurement_date, point, vx, vy, vz, temperature, severity, fault_type, notes, ai_result } = req.body;
     if (!machine_id || !date) return res.status(400).json({ error: 'Faltan campos obligatorios' });
     const id = uid();
-    const { ai_result } = req.body;
     await Q.insertMeasurement(
       id, machine_id, req.params.compId,
       date, point || '',
@@ -169,7 +168,7 @@ router.post('/components/:compId/measurements', requireAdmin, upload.array('imag
       parseFloat(temperature) || null,
       severity || 'normal', fault_type || '', notes || '',
       req.user ? req.user.username : 'admin',
-      ai_result || ''
+      ai_result || '', measurement_date || date
     );
     if (req.files && req.files.length) {
       for (const f of req.files) {

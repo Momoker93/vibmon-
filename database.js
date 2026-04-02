@@ -78,6 +78,11 @@ async function initDB() {
       await client.query("ALTER TABLE measurements ADD COLUMN IF NOT EXISTS ai_result TEXT DEFAULT ''");
     } catch(e) {}
     try {
+      // measurement_date = date the measurement was actually taken (user-specified)
+      // date field keeps the same value for backwards compatibility
+      await client.query("ALTER TABLE measurements ADD COLUMN IF NOT EXISTS measurement_date TEXT DEFAULT ''");
+    } catch(e) {}
+    try {
       await client.query("ALTER TABLE machines ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '⚙'");
     } catch(e) {}
 
@@ -108,13 +113,26 @@ const Q = {
   // Zones
   getAllZones: async () => {
     const r = await pool.query(`
+      WITH latest_per_comp AS (
+        SELECT DISTINCT ON (component_id) component_id, machine_id, severity
+        FROM measurements
+        ORDER BY component_id, date DESC, created_at DESC
+      ),
+      machine_severity AS (
+        SELECT ma.id as machine_id, ma.zone_id,
+          MAX(CASE WHEN l.severity='critico' THEN 2 WHEN l.severity='alerta' THEN 1 ELSE 0 END) as worst
+        FROM machines ma
+        LEFT JOIN latest_per_comp l ON l.machine_id = ma.id
+        GROUP BY ma.id, ma.zone_id
+      )
       SELECT z.*,
         COUNT(DISTINCT ma.id) as machine_count,
-        SUM(CASE WHEN m.severity='critico' THEN 1 ELSE 0 END) as critico_count,
-        SUM(CASE WHEN m.severity='alerta' THEN 1 ELSE 0 END) as alerta_count
+        COUNT(DISTINCT CASE WHEN ms.worst=2 THEN ma.id END) as critico_count,
+        COUNT(DISTINCT CASE WHEN ms.worst=1 THEN ma.id END) as alerta_count,
+        COUNT(DISTINCT CASE WHEN ms.worst=0 AND ma.id IS NOT NULL THEN ma.id END) as normal_count
       FROM zones z
       LEFT JOIN machines ma ON ma.zone_id = z.id
-      LEFT JOIN measurements m ON m.machine_id = ma.id
+      LEFT JOIN machine_severity ms ON ms.machine_id = ma.id
       GROUP BY z.id
       ORDER BY z.name
     `);
@@ -219,10 +237,10 @@ const Q = {
     `);
     return r.rows;
   },
-  insertMeasurement: async (id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy, aiResult) => {
+  insertMeasurement: async (id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy, aiResult, measurementDate) => {
     await pool.query(
-      'INSERT INTO measurements (id,machine_id,component_id,date,point,vx,vy,vz,temperature,severity,fault_type,notes,created_by,ai_result) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
-      [id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy, aiResult||'']
+      'INSERT INTO measurements (id,machine_id,component_id,date,point,vx,vy,vz,temperature,severity,fault_type,notes,created_by,ai_result,measurement_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
+      [id, machineId, compId, date, point, vx, vy, vz, temp, severity, fault, notes, createdBy, aiResult||'', measurementDate||date]
     );
   },
   deleteMeasurement: async (id) => {
@@ -240,14 +258,27 @@ const Q = {
   // Stats
   getGlobalStats: async () => {
     const r = await pool.query(`
+      WITH latest_per_comp AS (
+        SELECT DISTINCT ON (component_id) component_id, machine_id, severity
+        FROM measurements
+        ORDER BY component_id, date DESC, created_at DESC
+      ),
+      machine_severity AS (
+        SELECT ma.id as machine_id,
+          MAX(CASE WHEN l.severity='critico' THEN 2 WHEN l.severity='alerta' THEN 1 ELSE 0 END) as worst
+        FROM machines ma
+        LEFT JOIN latest_per_comp l ON l.machine_id = ma.id
+        GROUP BY ma.id
+      )
       SELECT
         COUNT(DISTINCT z.id) as zone_count,
         COUNT(DISTINCT ma.id) as machine_count,
-        SUM(CASE WHEN m.severity='critico' THEN 1 ELSE 0 END) as critico_count,
-        SUM(CASE WHEN m.severity='alerta' THEN 1 ELSE 0 END) as alerta_count
+        COUNT(DISTINCT CASE WHEN ms.worst=2 THEN ma.id END) as critico_count,
+        COUNT(DISTINCT CASE WHEN ms.worst=1 THEN ma.id END) as alerta_count,
+        COUNT(DISTINCT CASE WHEN ms.worst=0 AND ma.id IS NOT NULL THEN ma.id END) as normal_count
       FROM zones z
       LEFT JOIN machines ma ON ma.zone_id=z.id
-      LEFT JOIN measurements m ON m.machine_id=ma.id
+      LEFT JOIN machine_severity ms ON ms.machine_id=ma.id
     `);
     return r.rows[0];
   }

@@ -13,6 +13,22 @@ const SEV = {
 };
 const ISO_ALERT = 2.3, ISO_CRIT = 4.5;
 
+function relDate(dateStr) {
+  if(!dateStr) return '';
+  // dateStr is "YYYY-MM-DD"
+  const parts = dateStr.split('-');
+  if(parts.length < 3) return dateStr;
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+  const now = new Date(); now.setHours(0,0,0,0);
+  const diff = Math.round((now - d) / 86400000);
+  if(diff === 0) return '<span style="color:var(--gr);font-weight:700">Hoy</span>';
+  if(diff === 1) return '<span style="color:var(--gr)">Ayer</span>';
+  if(diff <= 7)  return `<span style="color:var(--yw)">${diff}d atrás</span>`;
+  if(diff <= 30) return `<span style="color:var(--yw)">${diff}d atrás</span>`;
+  if(diff <= 90) return `<span style="color:var(--or)">${Math.round(diff/7)}sem</span>`;
+  return `<span style="color:var(--rd)">${Math.round(diff/30)} meses</span>`;
+}
+
 // ── STATE ─────────────────────────────────────────────────────────────────────
 const S = {
   user: null, zones: [], curZone: null, curMachine: null, curComp: null, curMeas: null,
@@ -49,11 +65,37 @@ function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 // ── VIEWS ─────────────────────────────────────────────────────────────────────
-function showView(id) {
+function showView(id, pushToHistory) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0,0); updateBC(id);
+  if (pushToHistory !== false) {
+    const state = {
+      view: id,
+      curZone: S.curZone ? S.curZone.id : null,
+      curMachine: S.curMachine ? S.curMachine.id : null,
+      curMeas: S.curMeas ? S.curMeas.id : null
+    };
+    history.pushState(state, '', '#' + id);
+  }
 }
+
+window.addEventListener('popstate', function(e) {
+  if (!e.state || !S.user) return;
+  const { view, curZone, curMachine } = e.state;
+  if (view === 'v-zones') {
+    goZones(false);
+  } else if (view === 'v-zone' && curZone) {
+    goZone(curZone, false);
+  } else if (view === 'v-machine' && curMachine) {
+    goMachineById(curMachine, false);
+  } else if (view === 'v-meas') {
+    if (S.curMeas) showView('v-meas', false);
+    else if (curMachine) goMachineById(curMachine, false);
+  } else {
+    goZones(false);
+  }
+});
 function updateBC(vid) {
   const bc = document.getElementById('breadcrumb');
   let p = [`<span class="bc-link" onclick="goZones()">🏭 Zonas</span>`];
@@ -108,7 +150,8 @@ const APP = {
     ['btn-exp','btn-imp','btn-cfg','btn-bulk'].forEach(id => {
       const e = document.getElementById(id); if(e) e.style.display = isAdmin() ? '' : 'none';
     });
-    goZones();
+    history.replaceState({ view: 'v-zones', curZone: null, curMachine: null, curMeas: null }, '', '#v-zones');
+    goZones(false);
   },
 
   logout() {
@@ -153,8 +196,8 @@ async function saveCFG() {
 }
 
 // ── ZONES ─────────────────────────────────────────────────────────────────────
-async function goZones() {
-  showView('v-zones');
+async function goZones(push) {
+  showView('v-zones', push);
   try {
     const d = await API.get('/zones');
     S.zones = d.zones;
@@ -186,6 +229,12 @@ function renderZones(zones, stats) {
       <div class="kpin" style="color:${stats?.alerta_count?'var(--yw)':'var(--gr)'}">${stats?.alerta_count||0}</div>
       <div class="kpil">En alerta</div>
       <div style="font-size:10px;color:${stats?.alerta_count?'var(--yw)':'var(--tx2)'};margin-top:4px">${stats?.alerta_count>0?'Ver listado →':'Sin alertas'}</div>
+    </div>
+    <div class="card kpi" style="border-color:${(stats?.normal_count||0)>0?'rgba(0,255,136,.25)':'var(--br)'}">
+      <div style="font-size:26px;margin-bottom:4px">✅</div>
+      <div class="kpin" style="color:var(--gr)">${stats?.normal_count||0}</div>
+      <div class="kpil">En buen estado</div>
+      <div style="font-size:10px;color:var(--tx2);margin-top:4px">${(stats?.machine_count||0)>0?Math.round(((stats?.normal_count||0)/(stats?.machine_count||1))*100)+'% del total':''}</div>
     </div>`
 
   document.getElementById('btn-add-zone').style.display = isAdmin() ? '' : 'none';
@@ -270,10 +319,10 @@ async function deleteZone() {
 // ── ZONE DETAIL ───────────────────────────────────────────────────────────────
 const DB_machines = {}; // cache
 
-async function goZone(zoneId) {
+async function goZone(zoneId, push) {
   const zone = S.zones.find(z=>z.id===zoneId) || S.curZone;
   if(zoneId) S.curZone = S.zones.find(z=>z.id===zoneId) || { id: zoneId };
-  showView('v-zone');
+  showView('v-zone', push);
   document.getElementById('zone-title').textContent = (S.curZone?.icon||'📍')+' '+(S.curZone?.name||'Zona');
   document.getElementById('zone-desc').textContent = S.curZone?.description||'';
   document.getElementById('btn-add-mac').style.display = isAdmin() ? '' : 'none';
@@ -449,7 +498,7 @@ function showSuccessBanner(msg) {
 }
 
 // ── MACHINE DETAIL ────────────────────────────────────────────────────────────
-async function goMachineById(id) {
+async function goMachineById(id, push) {
   const mac = S.machines.find(m=>m.id===id) || DB_machines[id];
   if(!mac) { toast('Máquina no encontrada','err'); return; }
   S.curMachine = mac; S.charts = {};
@@ -472,7 +521,7 @@ async function goMachineById(id) {
   }
   renderMacKPIs();
   renderCompTabs();
-  showView('v-machine');
+  showView('v-machine', push);
   if(S.curMachine.components?.length) activateComp(S.curMachine.components[0].id);
   updateCompTabColors(); // async, updates in background
 }
@@ -497,49 +546,73 @@ async function updateCompTabColors() {
   if(!mac?.components?.length) return;
   for(const c of mac.components) {
     const tab = document.getElementById('tab-'+c.id);
+    const panel = document.getElementById('panel-'+c.id);
     if(!tab) continue;
     try {
       const ms = await API.get('/components/'+c.id+'/measurements');
       if(ms.length === 0) {
-        // No measurements - grey out slightly
-        tab.style.opacity = '0.5';
-        tab.style.fontStyle = 'italic';
-        tab.title = 'Sin mediciones';
+        // Hide tab and panel entirely if no measurements
+        tab.style.display = 'none';
+        if(panel) panel.style.display = 'none';
       } else {
+        tab.style.display = '';
         tab.style.opacity = '1';
         tab.style.fontStyle = 'normal';
-        // Color based on worst severity
-        const worst = ms.reduce((w,m) => {
-          if(m.severity==='critico') return 'critico';
-          if(m.severity==='alerta' && w!=='critico') return 'alerta';
-          return w;
-        }, 'normal');
-        if(worst==='critico') { tab.classList.add('tc'); tab.style.opacity='1'; }
-        else if(worst==='alerta') { tab.classList.add('ta'); tab.style.opacity='1'; }
-        tab.title = `${ms.length} medición${ms.length!==1?'es':''}`;
+        // Severity based only on LATEST measurement (by date)
+        const latest = ms.slice().sort((a,b) => b.date.localeCompare(a.date))[0];
+        const worst = latest.severity;
+        tab.classList.remove('tc','ta');
+        if(worst==='critico') { tab.classList.add('tc'); }
+        else if(worst==='alerta') { tab.classList.add('ta'); }
+        const latestDate = latest.measurement_date || latest.date;
+        tab.title = `Última: ${latestDate} · ${ms.length} medición${ms.length!==1?'es':''}`;
+        // Show last measurement summary under tab
+        tab.dataset.lastDate = latestDate;
+        tab.dataset.severity = worst;
       }
     } catch(e) {}
+  }
+  // After hiding empty tabs, activate first visible tab if current is hidden
+  const visibleTabs = mac.components.filter(c => {
+    const t = document.getElementById('tab-'+c.id);
+    return t && t.style.display !== 'none';
+  });
+  if(visibleTabs.length && S.curComp) {
+    const curTab = document.getElementById('tab-'+S.curComp.id);
+    if(curTab && curTab.style.display === 'none') activateComp(visibleTabs[0].id);
   }
 }
 function buildPanel(c, mac) {
   return `<div class="cpanel" id="panel-${c.id}">
     <div style="font-family:var(--mono);font-size:11px;color:var(--ac);letter-spacing:1px;margin-bottom:12px">🔩 ${c.name.toUpperCase()}</div>
-    <div class="card">
-      <div class="card-title">📈 Vibración X/Y/Z — Tendencia (mm/s ISO)</div>
-      <canvas id="vc-${c.id}" height="100" style="display:none"></canvas>
-      <div id="ve-${c.id}" style="text-align:center;color:var(--tx2);font-size:11px;padding:20px">Añade ≥2 mediciones para ver la gráfica</div>
-      <div class="cleg">
-        <span><i style="background:var(--vx)"></i>Eje X</span>
-        <span><i style="background:var(--vy)"></i>Eje Y</span>
-        <span><i style="background:var(--vz)"></i>Eje Z</span>
-        <span><i style="background:rgba(255,204,0,.6)"></i>Límite alerta (ISO)</span>
+
+    <!-- ÚLTIMA MEDICIÓN destacada -->
+    <div id="last-meas-${c.id}" style="display:none"></div>
+
+    <!-- GRÁFICAS en desplegable -->
+    <details id="charts-detail-${c.id}" style="margin-bottom:12px">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--s2);border:1px solid var(--br);border-radius:8px;font-family:var(--mono);font-size:10px;color:var(--tx2);letter-spacing:1px;user-select:none">
+        <span style="flex:1">📈 VER GRÁFICAS DE TENDENCIA</span><span>▼</span>
+      </summary>
+      <div style="border:1px solid var(--br);border-top:none;border-radius:0 0 8px 8px;padding:12px;background:var(--bg)">
+        <div class="card" style="margin-bottom:8px">
+          <div class="card-title">📈 Vibración X/Y/Z (mm/s ISO)</div>
+          <canvas id="vc-${c.id}" height="100" style="display:none"></canvas>
+          <div id="ve-${c.id}" style="text-align:center;color:var(--tx2);font-size:11px;padding:20px">Añade ≥2 mediciones para ver la gráfica</div>
+          <div class="cleg">
+            <span><i style="background:var(--vx)"></i>Eje X</span>
+            <span><i style="background:var(--vy)"></i>Eje Y</span>
+            <span><i style="background:var(--vz)"></i>Eje Z</span>
+            <span><i style="background:rgba(255,204,0,.6)"></i>Límite alerta (ISO)</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">🌡 Temperatura</div>
+          <canvas id="tc-${c.id}" height="80" style="display:none"></canvas>
+          <div id="te-${c.id}" style="text-align:center;color:var(--tx2);font-size:11px;padding:18px">Sin datos de temperatura suficientes (≥2)</div>
+        </div>
       </div>
-    </div>
-    <div class="card">
-      <div class="card-title">🌡 Temperatura — Tendencia</div>
-      <canvas id="tc-${c.id}" height="80" style="display:none"></canvas>
-      <div id="te-${c.id}" style="text-align:center;color:var(--tx2);font-size:11px;padding:18px">Sin datos de temperatura suficientes (≥2)</div>
-    </div>
+    </details>
 
     <!-- AI LAST ANALYSIS -->
     <div id="ai-last-${c.id}" style="display:none">
@@ -558,7 +631,10 @@ function buildPanel(c, mac) {
     <div class="card" id="addm-${c.id}" style="display:none">
       <div class="card-title">+ Nueva medición — ${c.name}</div>
       <div class="g2">
-        <div><label class="lbl">Fecha *</label><input type="date" id="fd-${c.id}"/></div>
+        <div>
+          <label class="lbl">📅 Fecha de medición * <span style="font-size:10px;color:var(--tx2)">(cuándo se tomó realmente)</span></label>
+          <input type="date" id="fd-${c.id}"/>
+        </div>
         <div><label class="lbl">Punto de medición</label><input id="fp-${c.id}" placeholder="Ej: Lado libre, Vertical"/></div>
       </div>
       <label class="lbl">Valores X / Y / Z (mm/s ISO) *</label>
@@ -652,10 +728,71 @@ async function activateComp(cid) {
   if(panel) panel.classList.add('active');
   try {
     S.measurements = await API.get('/components/'+cid+'/measurements');
+    renderLastMeasCard(cid);
     renderCompCharts(cid);
     renderHistory(cid);
     updateMacKPIs();
   } catch(e) { toast(e.message,'err'); }
+}
+
+function renderLastMeasCard(cid) {
+  const el = document.getElementById('last-meas-'+cid);
+  if(!el) return;
+  const ms = [...S.measurements].sort((a,b) => {
+    const da = a.measurement_date || a.date;
+    const db = b.measurement_date || b.date;
+    return db.localeCompare(da);
+  });
+  if(!ms.length) { el.style.display='none'; return; }
+  const m = ms[0];
+  const maxV = Math.max(parseFloat(m.vx)||0, parseFloat(m.vy)||0, parseFloat(m.vz)||0);
+  const measDate = m.measurement_date || m.date;
+  const uploadedAt = m.created_at ? new Date(m.created_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+  const sameDay = measDate === (m.created_at ? m.created_at.split('T')[0] : m.date);
+  el.style.display = 'block';
+  el.innerHTML = \`<div class="card" style="border-left:3px solid \${SEV[m.severity]?.c||'var(--gr)'};margin-bottom:12px;cursor:pointer" onclick="renderMeasDetail('\${m.id}')">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:1px">📋 ÚLTIMA MEDICIÓN</div>
+      \${badgeH(m.severity)}
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-size:16px;font-weight:700;font-family:var(--mono)">\${measDate}</div>
+        <div style="font-size:12px;margin-top:2px">\${relDate(measDate)}</div>
+        \${!sameDay && uploadedAt ? \`<div style="font-size:9px;color:var(--tx3);margin-top:3px">📤 Subida: \${uploadedAt}</div>\` : ''}
+      </div>
+    </div>
+    <div class="xyz-grid" style="margin-bottom:10px">
+      <div class="xyz-cell xyz-x">
+        <div class="xyz-label">X — HORIZONTAL</div>
+        <div class="xyz-val">\${fv(m.vx)}</div>
+        <div class="xyz-unit">mm/s ISO</div>
+        <div>\${axisSevDot(m.vx)}</div>
+      </div>
+      <div class="xyz-cell xyz-y">
+        <div class="xyz-label">Y — VERTICAL</div>
+        <div class="xyz-val">\${fv(m.vy)}</div>
+        <div class="xyz-unit">mm/s ISO</div>
+        <div>\${axisSevDot(m.vy)}</div>
+      </div>
+      <div class="xyz-cell xyz-z">
+        <div class="xyz-label">Z — AXIAL</div>
+        <div class="xyz-val">\${fv(m.vz)}</div>
+        <div class="xyz-unit">mm/s ISO</div>
+        <div>\${axisSevDot(m.vz)}</div>
+      </div>
+    </div>
+    <div class="g2">
+      <div class="card" style="text-align:center;padding:8px">
+        <div style="font-size:10px;color:var(--tx2)">TEMPERATURA</div>
+        <div style="font-size:18px;font-weight:700;color:var(--or);font-family:var(--mono)">\${m.temperature!=null?parseFloat(m.temperature).toFixed(1)+'°C':'—'}</div>
+      </div>
+      <div class="card" style="text-align:center;padding:8px">
+        <div style="font-size:10px;color:var(--tx2)">MÁX. VALOR</div>
+        <div style="font-size:18px;font-weight:700;color:var(--ac);font-family:var(--mono)">\${maxV.toFixed(2)} <span style="font-size:10px">mm/s</span></div>
+      </div>
+    </div>
+    \${m.fault_type?'<div style="margin-top:8px;font-size:11px;color:var(--tx2)">'+m.fault_type+'</div>':''}
+    <div style="text-align:right;margin-top:8px;font-size:10px;color:var(--tx3)">Ver detalle completo →</div>
+  </div>\`;
 }
 function updateMacKPIs() {
   const allMs = S.measurements;
@@ -779,7 +916,9 @@ async function saveMeas(cid, macId) {
   if(!vx&&!vy&&!vz){toast('Introduce al menos un valor X, Y o Z','err');return;}
   const fd = new FormData();
   fd.append('machine_id', macId);
-  fd.append('date', document.getElementById('fd-'+cid).value);
+  const measDate = document.getElementById('fd-'+cid).value;
+  fd.append('date', measDate);
+  fd.append('measurement_date', measDate);
   fd.append('point', document.getElementById('fp-'+cid).value);
   fd.append('vx', vx||''); fd.append('vy', vy||''); fd.append('vz', vz||'');
   fd.append('temperature', document.getElementById('ft-'+cid).value||'');
@@ -792,7 +931,7 @@ async function saveMeas(cid, macId) {
     const saved = await API.postForm('/components/'+cid+'/measurements', fd);
     S.measurements = await API.get('/components/'+cid+'/measurements');
     S.newImgs=[]; window['_aiResult_'+cid]=''; cancelMeas(cid);
-    renderCompCharts(cid); renderHistory(cid); updateMacKPIs();
+    renderLastMeasCard(cid); renderCompCharts(cid); renderHistory(cid); updateMacKPIs();
     updateTabSev(cid);
     const maxV=Math.max(parseFloat(vx)||0,parseFloat(vy)||0,parseFloat(vz)||0);
     const b=document.createElement('div');b.className='sbanner';b.style.marginTop='12px';
@@ -806,7 +945,8 @@ async function saveMeas(cid, macId) {
 }
 function updateTabSev(cid) {
   const ms=S.measurements; if(!ms.length)return;
-  const s=ms[ms.length-1].severity;
+  const latest = ms.slice().sort((a,b)=>(b.measurement_date||b.date).localeCompare(a.measurement_date||a.date))[0];
+  const s = latest.severity;
   const tab=document.getElementById('tab-'+cid);
   if(tab)tab.className='ctab active'+(s==='critico'?' tc':s==='alerta'?' ta':'');
 }
@@ -830,10 +970,15 @@ function renderHistory(cid, filterSev) {
   el.innerHTML=ms.map(m=>{
     const imgs=m.images||[];
     const thumb=imgs.length?`<img class="hth" src="${imgs[0]}" onclick="event.stopPropagation();openLB('${imgs[0]}')">`:`<div class="hni">📊</div>`;
+    const mDate = m.measurement_date || m.date;
     return`<div class="hr" onclick="renderMeasDetail('${m.id}')">
       ${thumb}
       <div style="flex:1;min-width:0">
-        <div style="font-size:12px">${m.date}${m.point?` · <span style="color:var(--tx2)">${m.point}</span>`:''}</div>
+        <div style="font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span>${mDate}</span>
+          <span style="font-size:11px">${relDate(mDate)}</span>
+          ${m.point?`<span style="color:var(--tx2);font-size:11px">${m.point}</span>`:''}
+        </div>
         <div class="xyz-mini">
           <span class="vx">X:${fv(m.vx)}</span><span class="sep">·</span>
           <span class="vy">Y:${fv(m.vy)}</span><span class="sep">·</span>
@@ -852,7 +997,8 @@ async function renderMeasDetail(measId) {
   if(!m) return;
   S.curMeas = m;
   const comp = S.curMachine?.components?.find(c=>c.id===m.component_id);
-  document.getElementById('md-title').textContent = `${S.curMachine?.name||'?'} › ${comp?.name||'?'} — ${m.date}`;
+  const mDate = m.measurement_date || m.date;
+  document.getElementById('md-title').textContent = `${S.curMachine?.name||'?'} › ${comp?.name||'?'} — ${mDate}`;
   document.getElementById('back-meas').onclick = () => goMachineById(S.curMachine.id);
   document.getElementById('btn-del-meas').style.display = isAdmin() ? '' : 'none';
   document.getElementById('btn-edit-meas').style.display = isAdmin() ? '' : 'none';
@@ -908,7 +1054,12 @@ async function renderMeasDetail(measId) {
       </details>`:''}
       ${m.fault_type?`<div style="margin-top:12px"><div style="font-size:10px;color:var(--tx2)">TIPO DE FALLA</div><div style="font-size:14px;margin-top:4px">${m.fault_type}</div></div>`:''}
       ${m.notes?`<div style="margin-top:10px"><div style="font-size:10px;color:var(--tx2)">OBSERVACIONES</div><p style="font-size:13px;color:var(--tx2);margin-top:4px;line-height:1.6">${m.notes}</p></div>`:''}
-      ${m.created_by?`<div style="margin-top:10px;font-size:10px;color:var(--tx3)">Registrado por: ${m.created_by} · ${new Date(m.created_at).toLocaleString('es-ES')}</div>`:''}
+      <div style="margin-top:12px;padding:8px;background:var(--s2);border-radius:6px">
+        <div style="font-size:10px;color:var(--tx2);margin-bottom:4px">FECHAS</div>
+        <div style="font-size:12px">📅 Medición tomada: <strong>${mDate}</strong> <span style="margin-left:6px">${relDate(mDate)}</span></div>
+        ${m.created_at && (m.measurement_date && m.measurement_date !== m.created_at?.split('T')[0]) ? `<div style="font-size:11px;color:var(--tx3);margin-top:3px">📤 Subida al sistema: ${new Date(m.created_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+        ${m.created_by ? `<div style="font-size:10px;color:var(--tx3);margin-top:2px">Por: ${m.created_by}</div>` : ''}
+      </div>
     </div>
     ${imgHtml}`;
   showView('v-meas');
