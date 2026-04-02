@@ -207,33 +207,45 @@ async function goZones(push) {
   } catch(e) { toast(e.message,'err'); }
 }
 function openZoneList() {
-  // Show full zone list view
   showView('v-zone-list', true);
   const grid = document.getElementById('zone-list-grid');
   if(!S.zones || !S.zones.length) {
     grid.innerHTML = '<p style="color:var(--tx2);text-align:center;padding:32px">Sin zonas definidas.</p>';
     return;
   }
-  grid.innerHTML = S.zones.map(z => {
+  // Build cards using DOM to avoid any quote escaping issues
+  grid.innerHTML = '';
+  S.zones.forEach(z => {
     const hC = (z.critico_count||0)>0, hA = (z.alerta_count||0)>0;
     const mc = parseInt(z.machine_count||0);
     const cr = parseInt(z.critico_count||0);
     const al = parseInt(z.alerta_count||0);
     const ok = mc - cr - al;
     const col = cr>0?'var(--rd)':al>0?'var(--yw)':mc>0?'var(--gr)':'var(--tx3)';
-    return '<div class="zcard ' + (hC?'zc':hA?'za':'') + '" onclick="goZone(\"' + z.id + '\")" style="position:relative">' +
-      '<div class="zone-icon">' + (z.icon||'🏭') + '</div>' +
-      '<div class="zone-name">' + z.name + '</div>' +
-      '<div class="zone-desc">' + (z.description||'') + '</div>' +
-      '<div class="row" style="margin-top:8px;flex-wrap:wrap;gap:4px">' +
-        '<span class="tag">🔧 ' + mc + ' máquina' + (mc!==1?'s':'') + '</span>' +
-        (cr?'<span class="badge bc">' + cr + ' crítica' + (cr!==1?'s':'') + '</span>':'') +
-        (al?'<span class="badge ba">' + al + ' alerta' + (al!==1?'s':'') + '</span>':'') +
-        (!cr&&!al&&ok>0?'<span class="badge" style="background:rgba(0,255,136,.15);color:var(--gr);border:1px solid rgba(0,255,136,.3)">✓ OK</span>':'') +
-      '</div>' +
-      '<div style="position:absolute;top:10px;right:12px;font-size:18px;font-weight:700;color:' + col + ';font-family:var(--mono)">' + (cr+al>0?cr+al:'✓') + '</div>' +
-    '</div>';
-  }).join('');
+
+    const card = document.createElement('div');
+    card.className = 'zcard' + (hC?' zc':hA?' za':'');
+    card.style.position = 'relative';
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => goZone(z.id));
+
+    const badge = (!cr&&!al&&ok>0)
+      ? '<span class="badge" style="background:rgba(0,255,136,.15);color:var(--gr);border:1px solid rgba(0,255,136,.3)">✓ OK</span>'
+      : (cr?'<span class="badge bc">'+cr+' crítica'+(cr!==1?'s':'')+'</span>':'')
+        +(al?'<span class="badge ba">'+al+' alerta'+(al!==1?'s':'')+'</span>':'');
+
+    card.innerHTML =
+      '<div class="zone-icon">'+(z.icon||'🏭')+'</div>'+
+      '<div class="zone-name">'+z.name+'</div>'+
+      '<div class="zone-desc">'+(z.description||'')+'</div>'+
+      '<div class="row" style="margin-top:8px;flex-wrap:wrap;gap:4px">'+
+        '<span class="tag">🔧 '+mc+' máquina'+(mc!==1?'s':'')+'</span>'+
+        badge+
+      '</div>'+
+      '<div style="position:absolute;top:10px;right:12px;font-size:18px;font-weight:700;color:'+col+';font-family:var(--mono)">'+(cr+al>0?cr+al:'✓')+'</div>';
+
+    grid.appendChild(card);
+  });
 }
 
 function renderZones(zones, stats) {
