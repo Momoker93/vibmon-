@@ -132,7 +132,19 @@ const Q = {
 
   // Machines
   getMachinesByZone: async (zoneId) => {
-    const r = await pool.query('SELECT * FROM machines WHERE zone_id=$1 ORDER BY name', [zoneId]);
+    const r = await pool.query(`
+      SELECT ma.*,
+        m.vx as last_vx, m.vy as last_vy, m.vz as last_vz,
+        m.date as last_date, m.severity as worst_severity
+      FROM machines ma
+      LEFT JOIN LATERAL (
+        SELECT vx,vy,vz,date,severity FROM measurements
+        WHERE machine_id=ma.id
+        ORDER BY date DESC, created_at DESC LIMIT 1
+      ) m ON true
+      WHERE ma.zone_id=$1
+      ORDER BY ma.name
+    `, [zoneId]);
     return r.rows;
   },
   getMachine: async (id) => {

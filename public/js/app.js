@@ -162,6 +162,12 @@ async function goZones() {
   } catch(e) { toast(e.message,'err'); }
 }
 function renderZones(zones, stats) {
+  // Set dashboard date
+  const dateEl = document.getElementById('dash-date');
+  if(dateEl) {
+    const now = new Date();
+    dateEl.textContent = now.toLocaleDateString('es-ES', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  }
   document.getElementById('gkpis').innerHTML = `
     <div class="card kpi" onclick="document.getElementById('zone-grid').scrollIntoView({behavior:'smooth'})" style="cursor:pointer">
       <div style="font-size:26px;margin-bottom:4px">🏭</div>
@@ -285,14 +291,27 @@ function renderMacGrid() {
     return;
   }
   grid.innerHTML = S.machines.map(mac => {
-    const ms_count = mac.measurement_count||0;
-    return `<div class="mcard" onclick="goMachineById('${mac.id}')">
-      <div style="font-size:14px;font-weight:700;color:#f1f5f9;margin-bottom:5px">${mac.name}</div>
+    const comps = mac.components?.length||0;
+    const sevClass = mac.worst_severity === 'critico' ? 'sc' : mac.worst_severity === 'alerta' ? 'sa' : '';
+    return `<div class="mcard ${sevClass}" onclick="goMachineById('${mac.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+        <div style="font-size:14px;font-weight:700;color:#f1f5f9;flex:1;margin-right:6px">${mac.name}</div>
+        ${mac.worst_severity==='critico'?'<span class="badge bc" style="font-size:9px">CRÍTICO</span>':mac.worst_severity==='alerta'?'<span class="badge ba" style="font-size:9px">ALERTA</span>':''}
+      </div>
       <div class="row" style="margin-bottom:7px">
         ${mac.type?`<span class="tag">${mac.type}</span>`:''}
         ${mac.rpm?`<span class="tag">⚙ ${mac.rpm} RPM</span>`:''}
       </div>
-      <div style="font-size:10px;color:var(--tx3);margin-bottom:6px">${mac.components?.length||0} componente${(mac.components?.length||0)!==1?'s':''}</div>
+      ${mac.last_vx||mac.last_vy||mac.last_vz ? `
+      <div style="font-family:var(--mono);font-size:11px;margin-bottom:5px;padding:5px 7px;background:var(--s2);border-radius:5px">
+        <span style="color:var(--vx)">X:${parseFloat(mac.last_vx||0).toFixed(2)}</span>
+        <span style="color:var(--tx3);margin:0 4px">·</span>
+        <span style="color:var(--vy)">Y:${parseFloat(mac.last_vy||0).toFixed(2)}</span>
+        <span style="color:var(--tx3);margin:0 4px">·</span>
+        <span style="color:var(--vz)">Z:${parseFloat(mac.last_vz||0).toFixed(2)}</span>
+        <span style="color:var(--tx3);font-size:9px"> mm/s</span>
+      </div>` : ''}
+      <div style="font-size:10px;color:var(--tx3)">${comps} componente${comps!==1?'s':''} · ${mac.last_date||'Sin mediciones'}</div>
     </div>`;
   }).join('');
 }
@@ -551,7 +570,13 @@ function buildPanel(c, mac) {
     </div>`}
     <div class="card">
       <div class="card-title">📋 Historial <span id="hcount-${c.id}" style="font-weight:400;color:var(--tx2)"></span>
-        <button class="btn bai xs" id="analyze-all-btn-${c.id}" onclick="analyzeAllMeasurements('${c.id}')" style="margin-left:auto">🤖 Analizar todas</button>
+        <div style="display:flex;gap:5px;margin-left:auto;align-items:center;flex-wrap:wrap">
+          <button class="btn xs bg" onclick="renderHistory('${c.id}','all')" id="f-all-${c.id}">Todas</button>
+          <button class="btn xs" style="background:rgba(255,51,85,.1);color:var(--rd);border:1px solid rgba(255,51,85,.3)" onclick="renderHistory('${c.id}','critico')">🔴</button>
+          <button class="btn xs" style="background:rgba(255,204,0,.1);color:var(--yw);border:1px solid rgba(255,204,0,.3)" onclick="renderHistory('${c.id}','alerta')">⚠️</button>
+          <button class="btn xs" style="background:rgba(0,255,136,.1);color:var(--gr);border:1px solid rgba(0,255,136,.3)" onclick="renderHistory('${c.id}','normal')">✅</button>
+          <button class="btn bai xs" id="analyze-all-btn-${c.id}" onclick="analyzeAllMeasurements('${c.id}')">🤖 IA</button>
+        </div>
       </div>
       <div id="analyze-all-prog-${c.id}" style="display:none;margin-bottom:10px">
         <div style="background:var(--s2);border-radius:4px;height:6px;overflow:hidden">
@@ -733,11 +758,12 @@ function updateTabSev(cid) {
 }
 
 // ── HISTORY ───────────────────────────────────────────────────────────────────
-function renderHistory(cid) {
-  const ms=[...S.measurements].reverse();
+function renderHistory(cid, filterSev) {
+  let ms=[...S.measurements].reverse();
+  if(filterSev && filterSev !== 'all') ms = ms.filter(m => m.severity === filterSev);
   const el=document.getElementById('hist-'+cid);
   const cnt=document.getElementById('hcount-'+cid);
-  if(cnt)cnt.textContent=ms.length?`(${ms.length})`:'';
+  if(cnt)cnt.textContent=S.measurements.length?`(${S.measurements.length})`:'';
   // Show last AI result in component panel
   const lastWithAI = S.measurements.filter(m=>m.ai_result).sort((a,b)=>b.date.localeCompare(a.date))[0];
   const aiBlock = document.getElementById('ai-last-'+cid);
@@ -848,7 +874,36 @@ async function deleteMeas() {
 
 // ── DASHBOARD EXTRA ───────────────────────────────────────────────────────────
 async function loadDashboardExtra(zones, stats) {
-  // Quick stats
+  // Zone heatmap
+  const heatmap = document.getElementById('zone-heatmap');
+  if(heatmap) {
+    if(!zones.length) {
+      heatmap.innerHTML = '<p style="color:var(--tx2);font-size:12px;text-align:center;padding:16px">Sin zonas definidas</p>';
+    } else {
+      heatmap.innerHTML = zones.map(z => {
+        const mc = parseInt(z.machine_count||0);
+        const cr = parseInt(z.critico_count||0);
+        const al = parseInt(z.alerta_count||0);
+        const ok = mc - cr - al;
+        const col = cr > 0 ? 'var(--rd)' : al > 0 ? 'var(--yw)' : mc > 0 ? 'var(--gr)' : 'var(--tx3)';
+        const bg = cr > 0 ? 'rgba(255,51,85,.08)' : al > 0 ? 'rgba(255,204,0,.08)' : 'rgba(0,255,136,.05)';
+        const pct = mc > 0 ? Math.round(((cr+al)/mc)*100) : 0;
+        return `<div onclick="goZone('${z.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;background:${bg};border:1px solid ${col}33;margin-bottom:6px;transition:all .2s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
+          <span style="font-size:20px">${z.icon||'🏭'}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${z.name}</div>
+            <div style="font-size:10px;color:var(--tx2);margin-top:2px">${mc} máquinas${cr?` · <span style="color:var(--rd)">${cr} críticas</span>`:''}${al?` · <span style="color:var(--yw)">${al} alertas</span>`:''}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:16px;font-weight:700;color:${col};font-family:var(--mono)">${cr+al > 0 ? cr+al : '✓'}</div>
+            ${mc>0?`<div style="font-size:9px;color:var(--tx2)">${pct}% KO</div>`:''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Quick stats (hidden, replaced by heatmap)
   const qs = document.getElementById('quick-stats-content');
   if(qs) {
     const totalMacs = zones.reduce((a,z) => a + parseInt(z.machine_count||0), 0);

@@ -58,32 +58,47 @@
 
   <!-- ZONES VIEW -->
   <div id="v-zones" class="view active">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+    <!-- DASHBOARD HEADER -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div>
-        <div style="font-size:20px;font-weight:700;color:#f1f5f9">Panel de Zonas</div>
-        <div style="font-size:12px;color:var(--tx2);margin-top:2px">Selecciona una zona para ver su maquinaria</div>
+        <div style="font-size:22px;font-weight:900;color:#f1f5f9;letter-spacing:-0.5px">Panel de Control</div>
+        <div style="font-size:12px;color:var(--tx2);margin-top:2px" id="dash-date"></div>
       </div>
       <button class="btn bp sm" id="btn-add-zone" onclick="openZoneModal()" style="display:none">+ Nueva zona</button>
     </div>
+
+    <!-- KPI CARDS -->
     <div class="g3" style="margin-bottom:16px" id="gkpis"></div>
-    <!-- LAST ACTIVITY + QUICK STATS -->
-    <div id="dashboard-extra" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-      <div class="card" id="last-activity-card">
-        <div class="ctitle">⚡ Última actividad</div>
-        <div id="last-activity-list"><p style="color:var(--tx2);font-size:12px">Cargando...</p></div>
+
+    <!-- HEATMAP + ACTIVITY -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px" id="dashboard-extra">
+      <div class="card">
+        <div class="card-title">🗺 Mapa de estado — Zonas</div>
+        <div id="zone-heatmap"></div>
       </div>
-      <div class="card" id="quick-stats-card">
-        <div class="ctitle">📊 Resumen global</div>
-        <div id="quick-stats-content"><p style="color:var(--tx2);font-size:12px">Cargando...</p></div>
+      <div class="card">
+        <div class="card-title">⚡ Última actividad</div>
+        <div id="last-activity-list"><p style="color:var(--tx2);font-size:12px">Cargando...</p></div>
       </div>
     </div>
 
-    <!-- ZONES -->
+    <!-- ALERTS PANEL -->
+    <div id="alrt-sec" style="display:none;margin-bottom:16px">
+      <div class="card" style="border-color:rgba(255,51,85,.25)">
+        <div class="card-title" style="color:var(--rd)">🔴 Alertas activas
+          <div class="row" style="margin-left:auto;gap:6px">
+            <button class="btn xs bg" onclick="showAlertList('critico')">Críticas</button>
+            <button class="btn xs bg" onclick="showAlertList('alerta')">Alertas</button>
+            <button class="btn xs bg" onclick="showAlertList('all')">Todas</button>
+          </div>
+        </div>
+        <div id="alrt-list"></div>
+      </div>
+    </div>
+
+    <!-- ZONES GRID -->
     <div style="font-family:var(--mono);font-size:10px;color:var(--tx2);letter-spacing:2px;margin-bottom:10px">🏭 ZONAS DE LA FÁBRICA</div>
     <div class="g4" id="zone-grid"></div>
-    <div id="alrt-sec" style="display:none;margin-top:16px">
-      <div class="card"><div class="card-title">⚠ Alertas recientes</div><div id="alrt-list"></div></div>
-    </div>
   </div>
 
   <!-- ZONE MACHINES -->

@@ -223,3 +223,17 @@ input::placeholder { color: var(--tx3); }
 details summary::-webkit-details-marker { display: none; }
 details[open] summary span:last-child { transform: rotate(180deg); }
 details summary span:last-child { display: inline-block; transition: transform .2s; }
+
+/* ── DASHBOARD IMPROVEMENTS ── */
+.mcard.sc::before { opacity:1!important; animation: pulse 1.5s infinite; }
+.mcard.sa::before { opacity:1!important; }
+#gkpis .card { transition: all .2s; }
+#gkpis .card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,212,255,.15); }
+
+/* ── RESPONSIVE DASHBOARD ── */
+@media (max-width: 600px) {
+  #dashboard-extra { grid-template-columns: 1fr !important; }
+}
+
+/* ── HISTORY FILTERS ── */
+.card-title { flex-wrap: wrap; gap: 6px; }
