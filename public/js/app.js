@@ -334,10 +334,26 @@ async function loadAlerts() {
   } catch {}
 }
 async function openMeasFromAlert(measId, macId, compId) {
-  // Navigate to measurement detail directly
-  const mac = DB_machines[macId] || await loadMachineById(macId);
-  S.curMachine = mac;
-  await renderMeasDetail(measId);
+  // Find zone and machine, then navigate to measurement detail
+  try {
+    if(!S.zones || !S.zones.length) {
+      const d = await API.get('/zones'); S.zones = d.zones;
+    }
+    for(const z of S.zones) {
+      const machines = await API.get('/zones/'+z.id+'/machines');
+      const mac = machines.find(m=>m.id===macId);
+      if(mac) {
+        S.curZone = z; S.curMachine = mac; S.machines = machines;
+        machines.forEach(m => DB_machines[m.id] = m);
+        const ms = await API.get('/components/'+compId+'/measurements');
+        S.measurements = ms;
+        S.curComp = mac.components?.find(c=>c.id===compId);
+        renderMeasDetail(measId);
+        return;
+      }
+    }
+    toast('No se encontró la medición','err');
+  } catch(e) { toast(e.message,'err'); }
 }
 
 // Zone CRUD
@@ -589,8 +605,9 @@ function renderMacKPIs() {
 function renderCompTabs() {
   const mac = S.curMachine;
   if(!mac?.components?.length) { document.getElementById('comp-tabs').innerHTML=''; document.getElementById('comp-panels').innerHTML=''; return; }
+  // Render all tabs hidden by default — updateCompTabColors will show only those with measurements
   document.getElementById('comp-tabs').innerHTML = mac.components.map(c =>
-    `<div class="ctab" id="tab-${c.id}" onclick="activateComp('${c.id}')">${c.name}</div>`).join('');
+    `<div class="ctab" id="tab-${c.id}" onclick="activateComp('${c.id}')" style="display:none">${c.name}</div>`).join('');
   document.getElementById('comp-panels').innerHTML = mac.components.map(c => buildPanel(c, mac)).join('');
 }
 
@@ -1225,12 +1242,7 @@ async function showAlertList(severity) {
   const sec = document.getElementById('alrt-sec');
   const list = document.getElementById('alrt-list');
 
-  // If already showing same filter, toggle off
-  if(sec._currentFilter === severity && sec.style.display !== 'none') {
-    sec.style.display = 'none';
-    sec._currentFilter = null;
-    return;
-  }
+  // Always show, never collapse on re-click
   sec._currentFilter = severity;
 
   const all = await API.get('/measurements/alerts');
