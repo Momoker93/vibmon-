@@ -749,50 +749,33 @@ function renderLastMeasCard(cid) {
   const measDate = m.measurement_date || m.date;
   const uploadedAt = m.created_at ? new Date(m.created_at).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
   const sameDay = measDate === (m.created_at ? m.created_at.split('T')[0] : m.date);
+  const uploadHtml = (!sameDay && uploadedAt) ? '<div style="font-size:9px;color:var(--tx3);margin-top:3px">Subida: '+uploadedAt+'</div>' : '';
+  const faultHtml = m.fault_type ? '<div style="margin-top:8px;font-size:11px;color:var(--tx2)">'+m.fault_type+'</div>' : '';
+  const tempVal = m.temperature!=null ? parseFloat(m.temperature).toFixed(1)+'\u00b0C' : '\u2014';
   el.style.display = 'block';
-  el.innerHTML = \`<div class="card" style="border-left:3px solid \${SEV[m.severity]?.c||'var(--gr)'};margin-bottom:12px;cursor:pointer" onclick="renderMeasDetail('\${m.id}')">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:1px">📋 ÚLTIMA MEDICIÓN</div>
-      \${badgeH(m.severity)}
-      <div style="margin-left:auto;text-align:right">
-        <div style="font-size:16px;font-weight:700;font-family:var(--mono)">\${measDate}</div>
-        <div style="font-size:12px;margin-top:2px">\${relDate(measDate)}</div>
-        \${!sameDay && uploadedAt ? \`<div style="font-size:9px;color:var(--tx3);margin-top:3px">📤 Subida: \${uploadedAt}</div>\` : ''}
-      </div>
-    </div>
-    <div class="xyz-grid" style="margin-bottom:10px">
-      <div class="xyz-cell xyz-x">
-        <div class="xyz-label">X — HORIZONTAL</div>
-        <div class="xyz-val">\${fv(m.vx)}</div>
-        <div class="xyz-unit">mm/s ISO</div>
-        <div>\${axisSevDot(m.vx)}</div>
-      </div>
-      <div class="xyz-cell xyz-y">
-        <div class="xyz-label">Y — VERTICAL</div>
-        <div class="xyz-val">\${fv(m.vy)}</div>
-        <div class="xyz-unit">mm/s ISO</div>
-        <div>\${axisSevDot(m.vy)}</div>
-      </div>
-      <div class="xyz-cell xyz-z">
-        <div class="xyz-label">Z — AXIAL</div>
-        <div class="xyz-val">\${fv(m.vz)}</div>
-        <div class="xyz-unit">mm/s ISO</div>
-        <div>\${axisSevDot(m.vz)}</div>
-      </div>
-    </div>
-    <div class="g2">
-      <div class="card" style="text-align:center;padding:8px">
-        <div style="font-size:10px;color:var(--tx2)">TEMPERATURA</div>
-        <div style="font-size:18px;font-weight:700;color:var(--or);font-family:var(--mono)">\${m.temperature!=null?parseFloat(m.temperature).toFixed(1)+'°C':'—'}</div>
-      </div>
-      <div class="card" style="text-align:center;padding:8px">
-        <div style="font-size:10px;color:var(--tx2)">MÁX. VALOR</div>
-        <div style="font-size:18px;font-weight:700;color:var(--ac);font-family:var(--mono)">\${maxV.toFixed(2)} <span style="font-size:10px">mm/s</span></div>
-      </div>
-    </div>
-    \${m.fault_type?'<div style="margin-top:8px;font-size:11px;color:var(--tx2)">'+m.fault_type+'</div>':''}
-    <div style="text-align:right;margin-top:8px;font-size:10px;color:var(--tx3)">Ver detalle completo →</div>
-  </div>\`;
+  el.innerHTML =
+    '<div class="card" style="border-left:3px solid '+(SEV[m.severity]?.c||'var(--gr)')+';margin-bottom:12px;cursor:pointer" onclick="renderMeasDetail(\'' +m.id+ '\')">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">' +
+        '<div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:1px">ULTIMA MEDICION</div>' +
+        badgeH(m.severity) +
+        '<div style="margin-left:auto;text-align:right">' +
+          '<div style="font-size:16px;font-weight:700;font-family:var(--mono)">'+measDate+'</div>' +
+          '<div style="font-size:12px;margin-top:2px">'+relDate(measDate)+'</div>' +
+          uploadHtml +
+        '</div>' +
+      '</div>' +
+      '<div class="xyz-grid" style="margin-bottom:10px">' +
+        '<div class="xyz-cell xyz-x"><div class="xyz-label">X HORIZONTAL</div><div class="xyz-val">'+fv(m.vx)+'</div><div class="xyz-unit">mm/s ISO</div><div>'+axisSevDot(m.vx)+'</div></div>' +
+        '<div class="xyz-cell xyz-y"><div class="xyz-label">Y VERTICAL</div><div class="xyz-val">'+fv(m.vy)+'</div><div class="xyz-unit">mm/s ISO</div><div>'+axisSevDot(m.vy)+'</div></div>' +
+        '<div class="xyz-cell xyz-z"><div class="xyz-label">Z AXIAL</div><div class="xyz-val">'+fv(m.vz)+'</div><div class="xyz-unit">mm/s ISO</div><div>'+axisSevDot(m.vz)+'</div></div>' +
+      '</div>' +
+      '<div class="g2">' +
+        '<div class="card" style="text-align:center;padding:8px"><div style="font-size:10px;color:var(--tx2)">TEMPERATURA</div><div style="font-size:18px;font-weight:700;color:var(--or);font-family:var(--mono)">'+tempVal+'</div></div>' +
+        '<div class="card" style="text-align:center;padding:8px"><div style="font-size:10px;color:var(--tx2)">MAX. VALOR</div><div style="font-size:18px;font-weight:700;color:var(--ac);font-family:var(--mono)">'+maxV.toFixed(2)+' <span style="font-size:10px">mm/s</span></div></div>' +
+      '</div>' +
+      faultHtml +
+      '<div style="text-align:right;margin-top:8px;font-size:10px;color:var(--tx3)">Ver detalle completo</div>' +
+    '</div>';
 }
 function updateMacKPIs() {
   const allMs = S.measurements;
