@@ -222,7 +222,8 @@ async function loadAlerts() {
     // Always keep panel hidden on load - only show when user clicks filter buttons
     // But update the KPI buttons to show counts
     if(!alerts.length) { sec.style.display='none'; return; }
-    sec.style.display = 'none'; // hidden by default, user opens with buttons
+    sec.style.display = 'block'; // always visible in dashboard
+    document.getElementById('alrt-list').style.display = 'none'; // but content collapsed
     document.getElementById('alrt-list').innerHTML = alerts.map(m => {
       const mx = Math.max(parseFloat(m.vx)||0,parseFloat(m.vy)||0,parseFloat(m.vz)||0);
       return `<div class="hr" onclick="openMeasFromAlert('${m.id}','${m.machine_id}','${m.component_id}')">
@@ -297,7 +298,10 @@ function renderMacGrid() {
     const sevClass = mac.worst_severity === 'critico' ? 'sc' : mac.worst_severity === 'alerta' ? 'sa' : '';
     return `<div class="mcard ${sevClass}" onclick="goMachineById('${mac.id}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-        <div style="font-size:14px;font-weight:700;color:#f1f5f9;flex:1;margin-right:6px">${mac.name}</div>
+        <div style="display:flex;align-items:center;gap:7px;flex:1;margin-right:6px">
+          <span style="font-size:22px">${mac.icon||'⚙'}</span>
+          <div style="font-size:14px;font-weight:700;color:#f1f5f9">${mac.name}</div>
+        </div>
         ${mac.worst_severity==='critico'?'<span class="badge bc" style="font-size:9px">CRÍTICO</span>':mac.worst_severity==='alerta'?'<span class="badge ba" style="font-size:9px">ALERTA</span>':''}
       </div>
       <div class="row" style="margin-bottom:7px">
@@ -318,6 +322,50 @@ function renderMacGrid() {
   }).join('');
 }
 
+
+// ── MACHINE ICONS ─────────────────────────────────────────────────────────────
+const MAC_ICONS = [
+  { icon: '⚙', label: 'Genérico' },
+  { icon: '🔧', label: 'Motor' },
+  { icon: '💨', label: 'Ventilador' },
+  { icon: '💧', label: 'Bomba' },
+  { icon: '⚡', label: 'Motor eléctrico' },
+  { icon: '🔩', label: 'Reductor' },
+  { icon: '🔄', label: 'Rodamiento' },
+  { icon: '📦', label: 'Cinta/Redler' },
+  { icon: '🏭', label: 'General' },
+  { icon: '🌀', label: 'Compresor' },
+  { icon: '🔗', label: 'Acoplamiento' },
+  { icon: '⛽', label: 'Bomba hidráulica' },
+  { icon: '🌬️', label: 'Extractor' },
+  { icon: '🎡', label: 'Elevador/Noria' },
+  { icon: '➡️', label: 'Transportador' },
+  { icon: '🔀', label: 'Mezclador' },
+  { icon: '🔨', label: 'Molino' },
+  { icon: '🌊', label: 'Bomba sumergible' },
+  { icon: '❄️', label: 'Refrigeración' },
+  { icon: '🔋', label: 'Grupo electrógeno' },
+];
+
+function renderIconPicker(selectedIcon) {
+  const container = document.getElementById('mac-icon-picker');
+  if(!container) return;
+  const sel = selectedIcon || document.getElementById('mac-icon-selected')?.value || '⚙';
+  container.innerHTML = MAC_ICONS.map(({icon, label}) =>
+    `<div onclick="selectMacIcon('${icon}')" title="${label}"
+      style="width:38px;height:38px;display:flex;align-items:center;justify-content:center;
+      font-size:20px;border-radius:8px;cursor:pointer;transition:all .15s;
+      border:2px solid ${icon===sel?'var(--ac)':'var(--br)'};
+      background:${icon===sel?'rgba(0,212,255,.15)':'var(--s2)'}"
+      id="icon-opt-${icon.codePointAt(0)}">${icon}</div>`
+  ).join('');
+}
+
+function selectMacIcon(icon) {
+  document.getElementById('mac-icon-selected').value = icon;
+  renderIconPicker(icon);
+}
+
 // Machine CRUD
 function openAddMachine() {
   S.editMac = null; S.selPredef = []; S.customComps = [];
@@ -326,7 +374,8 @@ function openAddMachine() {
   document.getElementById('mt').value='';
   document.getElementById('mc-inp').value=''; document.getElementById('mc-tags').innerHTML='';
   document.getElementById('mdel').style.display='none';
-  renderPredefChips(); openModal('mmac');
+  document.getElementById('mac-icon-selected').value='⚙';
+  renderPredefChips(); renderIconPicker('⚙'); openModal('mmac');
 }
 function openEditMachine() {
   const mac = S.curMachine; if(!mac) return;
@@ -340,7 +389,9 @@ function openEditMachine() {
   document.getElementById('mdel').style.display = '';
   S.selPredef = (mac.components||[]).filter(c=>PREDEF_COMPS.includes(c.name)).map(c=>c.name);
   S.customComps = (mac.components||[]).filter(c=>!PREDEF_COMPS.includes(c.name)).map(c=>({id:c.id,name:c.name}));
-  renderPredefChips(); renderCustomTags(); openModal('mmac');
+  const macIcon = mac.icon || '⚙';
+  document.getElementById('mac-icon-selected').value = macIcon;
+  renderPredefChips(); renderCustomTags(); renderIconPicker(macIcon); openModal('mmac');
 }
 function renderPredefChips() {
   document.getElementById('predef-chips').innerHTML = PREDEF_COMPS.map(n =>
@@ -365,7 +416,8 @@ async function saveMachine() {
     ...S.customComps
   ];
   if(!comps.length) { toast('Añade al menos un componente','err'); return; }
-  const body = { name, type: document.getElementById('mt').value, rpm: document.getElementById('mr').value||null, notes: document.getElementById('mno').value.trim(), components: comps };
+  const icon = document.getElementById('mac-icon-selected')?.value || '⚙';
+  const body = { name, type: document.getElementById('mt').value, rpm: document.getElementById('mr').value||null, notes: document.getElementById('mno').value.trim(), icon, components: comps };
   try {
     if(S.editMac) {
       await API.put('/machines/'+S.editMac.id, body);
@@ -991,6 +1043,7 @@ async function showAlertList(severity) {
   const color = severity === 'critico' ? 'var(--rd)' : 'var(--yw)';
 
   sec.style.display = 'block';
+  list.style.display = 'block';
 
   if(!filtered.length) {
     list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--tx2)">
@@ -1372,7 +1425,10 @@ async function startMultiFolderImport() {
   }
 
   bar.style.width = '100%';
-  status.textContent = `✅ Completado: ${totalMacCreated} máquinas creadas · ${totalMeas} mediciones guardadas`;
+  // Change title to FINALIZADO
+  const progTitle = document.getElementById('bi-prog-title');
+  if(progTitle) { progTitle.textContent = '✅ IMPORTACIÓN FINALIZADA'; progTitle.style.color = 'var(--gr)'; }
+  status.textContent = `${totalMacCreated} máquinas creadas · ${totalMeas} mediciones guardadas`;
   addLog(`\n🎉 FINALIZADO: ${totalMacCreated} máquinas nuevas · ${totalMeas} mediciones`, 'var(--ac)');
   toast(`✅ ${totalMeas} mediciones importadas`, 'ok', 6000);
   document.getElementById('bi-start').style.display = '';

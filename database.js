@@ -34,6 +34,7 @@ async function initDB() {
         type TEXT DEFAULT '',
         rpm INTEGER,
         notes TEXT DEFAULT '',
+        icon TEXT DEFAULT '⚙',
         created_at TIMESTAMP DEFAULT NOW()
       );
 
@@ -72,10 +73,13 @@ async function initDB() {
       );
     `);
 
-    // Safe migration - add ai_result column if not exists
+    // Safe migrations
     try {
       await client.query("ALTER TABLE measurements ADD COLUMN IF NOT EXISTS ai_result TEXT DEFAULT ''");
-    } catch(e) { /* column may already exist */ }
+    } catch(e) {}
+    try {
+      await client.query("ALTER TABLE machines ADD COLUMN IF NOT EXISTS icon TEXT DEFAULT '⚙'");
+    } catch(e) {}
 
     // Seed admin
     const existing = await client.query('SELECT id FROM users WHERE username=$1', [process.env.ADMIN_USER || 'admin']);
@@ -151,12 +155,12 @@ const Q = {
     const r = await pool.query('SELECT * FROM machines WHERE id=$1', [id]);
     return r.rows[0] || null;
   },
-  insertMachine: async (id, zoneId, name, type, rpm, notes) => {
-    await pool.query('INSERT INTO machines (id,zone_id,name,type,rpm,notes) VALUES ($1,$2,$3,$4,$5,$6)',
-      [id, zoneId, name, type, rpm, notes]);
+  insertMachine: async (id, zoneId, name, type, rpm, notes, icon) => {
+    await pool.query('INSERT INTO machines (id,zone_id,name,type,rpm,notes,icon) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [id, zoneId, name, type, rpm, notes, icon||'⚙']);
   },
-  updateMachine: async (name, type, rpm, notes, id) => {
-    await pool.query('UPDATE machines SET name=$1,type=$2,rpm=$3,notes=$4 WHERE id=$5', [name, type, rpm, notes, id]);
+  updateMachine: async (name, type, rpm, notes, id, icon) => {
+    await pool.query('UPDATE machines SET name=$1,type=$2,rpm=$3,notes=$4,icon=$5 WHERE id=$6', [name, type, rpm, notes, icon||'⚙', id]);
   },
   deleteMachine: async (id) => {
     await pool.query('DELETE FROM machines WHERE id=$1', [id]);

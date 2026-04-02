@@ -185,8 +185,19 @@
       </div>
       <div><label class="lbl">RPM nominales</label><input id="mr" type="number" placeholder="1500"/></div>
     </div>
-    <label class="lbl">Notas</label>
-    <textarea id="mno" placeholder="Potencia, modelo, rodamientos instalados..." style="min-height:50px"></textarea>
+    <div class="g2">
+      <div>
+        <label class="lbl">Icono de la máquina</label>
+        <div id="mac-icon-picker" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+          <!-- Icons rendered by JS -->
+        </div>
+        <input id="mac-icon-selected" type="hidden" value="⚙"/>
+      </div>
+      <div>
+        <label class="lbl">Notas</label>
+        <textarea id="mno" placeholder="Potencia, modelo, rodamientos instalados..." style="min-height:68px"></textarea>
+      </div>
+    </div>
     <div style="margin-top:14px">
       <label class="lbl" style="margin-top:0">Componentes a monitorear</label>
       <div style="font-size:11px;color:var(--tx2);margin-bottom:8px">Selecciona predefinidos y/o añade los tuyos</div>

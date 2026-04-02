@@ -88,7 +88,7 @@ router.post('/zones/:zoneId/machines', requireAdmin, async (req, res) => {
     const { name, type, rpm, notes, components } = req.body;
     if (!name) return res.status(400).json({ error: 'Nombre obligatorio' });
     const id = uid();
-    await Q.insertMachine(id, req.params.zoneId, name, type || '', rpm || null, notes || '');
+    await Q.insertMachine(id, req.params.zoneId, name, type || '', rpm || null, notes || '', body.icon || '⚙');
     const comps = [];
     if (components && components.length) {
       for (let i = 0; i < components.length; i++) {
@@ -105,7 +105,7 @@ router.post('/zones/:zoneId/machines', requireAdmin, async (req, res) => {
 router.put('/machines/:id', requireAdmin, async (req, res) => {
   try {
     const { name, type, rpm, notes, components } = req.body;
-    await Q.updateMachine(name, type || '', rpm || null, notes || '', req.params.id);
+    await Q.updateMachine(name, type || '', rpm || null, notes || '', req.params.id, body.icon || '⚙');
     if (components) {
       // SAFE: only add NEW components, never delete existing ones with measurements
       const existing = await Q.getComponentsByMachine(req.params.id);
