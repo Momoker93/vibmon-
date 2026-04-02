@@ -85,6 +85,8 @@ window.addEventListener('popstate', function(e) {
   const { view, curZone, curMachine } = e.state;
   if (view === 'v-zones') {
     goZones(false);
+  } else if (view === 'v-zone-list') {
+    openZoneList();
   } else if (view === 'v-zone' && curZone) {
     goZone(curZone, false);
   } else if (view === 'v-machine' && curMachine) {
@@ -147,7 +149,7 @@ const APP = {
     document.getElementById('hdr').style.display = 'flex';
     document.getElementById('app-content').style.display = 'block';
     document.getElementById('ubadge').textContent = S.user.role==='admin' ? `👤 ${S.user.username.toUpperCase()}` : '👁 SOLO LECTURA';
-    ['btn-exp','btn-imp','btn-cfg','btn-bulk'].forEach(id => {
+    ['btn-exp','btn-imp','btn-cfg','btn-bulk','btn-add-zone-list'].forEach(id => {
       const e = document.getElementById(id); if(e) e.style.display = isAdmin() ? '' : 'none';
     });
     history.replaceState({ view: 'v-zones', curZone: null, curMachine: null, curMeas: null }, '', '#v-zones');
@@ -204,6 +206,36 @@ async function goZones(push) {
     renderZones(d.zones, d.stats);
   } catch(e) { toast(e.message,'err'); }
 }
+function openZoneList() {
+  // Show full zone list view
+  showView('v-zone-list', true);
+  const grid = document.getElementById('zone-list-grid');
+  if(!S.zones || !S.zones.length) {
+    grid.innerHTML = '<p style="color:var(--tx2);text-align:center;padding:32px">Sin zonas definidas.</p>';
+    return;
+  }
+  grid.innerHTML = S.zones.map(z => {
+    const hC = (z.critico_count||0)>0, hA = (z.alerta_count||0)>0;
+    const mc = parseInt(z.machine_count||0);
+    const cr = parseInt(z.critico_count||0);
+    const al = parseInt(z.alerta_count||0);
+    const ok = mc - cr - al;
+    const col = cr>0?'var(--rd)':al>0?'var(--yw)':mc>0?'var(--gr)':'var(--tx3)';
+    return '<div class="zcard ' + (hC?'zc':hA?'za':'') + '" onclick="goZone(\"' + z.id + '\")" style="position:relative">' +
+      '<div class="zone-icon">' + (z.icon||'🏭') + '</div>' +
+      '<div class="zone-name">' + z.name + '</div>' +
+      '<div class="zone-desc">' + (z.description||'') + '</div>' +
+      '<div class="row" style="margin-top:8px;flex-wrap:wrap;gap:4px">' +
+        '<span class="tag">🔧 ' + mc + ' máquina' + (mc!==1?'s':'') + '</span>' +
+        (cr?'<span class="badge bc">' + cr + ' crítica' + (cr!==1?'s':'') + '</span>':'') +
+        (al?'<span class="badge ba">' + al + ' alerta' + (al!==1?'s':'') + '</span>':'') +
+        (!cr&&!al&&ok>0?'<span class="badge" style="background:rgba(0,255,136,.15);color:var(--gr);border:1px solid rgba(0,255,136,.3)">✓ OK</span>':'') +
+      '</div>' +
+      '<div style="position:absolute;top:10px;right:12px;font-size:18px;font-weight:700;color:' + col + ';font-family:var(--mono)">' + (cr+al>0?cr+al:'✓') + '</div>' +
+    '</div>';
+  }).join('');
+}
+
 function renderZones(zones, stats) {
   // Set dashboard date
   const dateEl = document.getElementById('dash-date');
@@ -211,31 +243,37 @@ function renderZones(zones, stats) {
     const now = new Date();
     dateEl.textContent = now.toLocaleDateString('es-ES', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
   }
-  document.getElementById('gkpis').innerHTML = `
-    <div class="card kpi" onclick="document.getElementById('zone-grid').scrollIntoView({behavior:'smooth'})" style="cursor:pointer">
-      <div style="font-size:26px;margin-bottom:4px">🏭</div>
-      <div class="kpin">${stats?.zone_count||0}</div>
-      <div class="kpil">Zonas</div>
-      <div style="font-size:10px;color:var(--tx2);margin-top:4px">Ver todas ↓</div>
-    </div>
-    <div class="card kpi" onclick="showAlertList('critico')" style="cursor:pointer;border-color:${stats?.critico_count?'rgba(255,51,85,.35)':'var(--br)'}">
-      <div style="font-size:26px;margin-bottom:4px">${stats?.critico_count>0?'🔴':'✅'}</div>
-      <div class="kpin" style="color:${stats?.critico_count?'var(--rd)':'var(--gr)'}">${stats?.critico_count||0}</div>
-      <div class="kpil">Críticas</div>
-      <div style="font-size:10px;color:${stats?.critico_count?'var(--rd)':'var(--tx2)'};margin-top:4px">${stats?.critico_count>0?'Ver listado →':'Sin alertas críticas'}</div>
-    </div>
-    <div class="card kpi" onclick="showAlertList('alerta')" style="cursor:pointer;border-color:${stats?.alerta_count?'rgba(255,204,0,.35)':'var(--br)'}">
-      <div style="font-size:26px;margin-bottom:4px">${stats?.alerta_count>0?'⚠️':'✅'}</div>
-      <div class="kpin" style="color:${stats?.alerta_count?'var(--yw)':'var(--gr)'}">${stats?.alerta_count||0}</div>
-      <div class="kpil">En alerta</div>
-      <div style="font-size:10px;color:${stats?.alerta_count?'var(--yw)':'var(--tx2)'};margin-top:4px">${stats?.alerta_count>0?'Ver listado →':'Sin alertas'}</div>
-    </div>
-    <div class="card kpi" style="border-color:${(stats?.normal_count||0)>0?'rgba(0,255,136,.25)':'var(--br)'}">
-      <div style="font-size:26px;margin-bottom:4px">✅</div>
-      <div class="kpin" style="color:var(--gr)">${stats?.normal_count||0}</div>
-      <div class="kpil">En buen estado</div>
-      <div style="font-size:10px;color:var(--tx2);margin-top:4px">${(stats?.machine_count||0)>0?Math.round(((stats?.normal_count||0)/(stats?.machine_count||1))*100)+'% del total':''}</div>
-    </div>`
+  document.getElementById('gkpis').innerHTML =
+    // Row 1: Zones header bar (clickable → opens zone list)
+    '<div class="card" onclick="openZoneList()" style="display:flex;align-items:center;gap:16px;padding:14px 20px;margin-bottom:12px;cursor:pointer;border-color:rgba(0,212,255,.2)">' +
+      '<span style="font-size:24px">🏭</span>' +
+      '<div style="flex:1">' +
+        '<div style="font-size:11px;font-family:var(--mono);color:var(--ac);letter-spacing:2px">ZONAS DE LA FÁBRICA</div>' +
+        '<div style="font-size:22px;font-weight:900;color:#f1f5f9;font-family:var(--mono)">' + (stats?.zone_count||0) + ' zonas · ' + (stats?.machine_count||0) + ' máquinas</div>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--ac)">Ver todas →</div>' +
+    '</div>' +
+    // Row 2: 3 KPIs side by side
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">' +
+      '<div class="card kpi" onclick="showAlertList(\"critico\")" style="cursor:pointer;border-color:' + (stats?.critico_count?'rgba(255,51,85,.35)':'var(--br)') + '">' +
+        '<div style="font-size:26px;margin-bottom:4px">' + (stats?.critico_count>0?'🔴':'✅') + '</div>' +
+        '<div class="kpin" style="color:' + (stats?.critico_count?'var(--rd)':'var(--gr)') + '">' + (stats?.critico_count||0) + '</div>' +
+        '<div class="kpil">Críticas</div>' +
+        '<div style="font-size:10px;color:' + (stats?.critico_count?'var(--rd)':'var(--tx2)') + ';margin-top:4px">' + (stats?.critico_count>0?'Ver listado →':'Sin alertas críticas') + '</div>' +
+      '</div>' +
+      '<div class="card kpi" onclick="showAlertList(\"alerta\")" style="cursor:pointer;border-color:' + (stats?.alerta_count?'rgba(255,204,0,.35)':'var(--br)') + '">' +
+        '<div style="font-size:26px;margin-bottom:4px">' + (stats?.alerta_count>0?'⚠️':'✅') + '</div>' +
+        '<div class="kpin" style="color:' + (stats?.alerta_count?'var(--yw)':'var(--gr)') + '">' + (stats?.alerta_count||0) + '</div>' +
+        '<div class="kpil">En alerta</div>' +
+        '<div style="font-size:10px;color:' + (stats?.alerta_count?'var(--yw)':'var(--tx2)') + ';margin-top:4px">' + (stats?.alerta_count>0?'Ver listado →':'Sin alertas') + '</div>' +
+      '</div>' +
+      '<div class="card kpi" style="border-color:' + ((stats?.normal_count||0)>0?'rgba(0,255,136,.25)':'var(--br)') + '">' +
+        '<div style="font-size:26px;margin-bottom:4px">✅</div>' +
+        '<div class="kpin" style="color:var(--gr)">' + (stats?.normal_count||0) + '</div>' +
+        '<div class="kpil">En buen estado</div>' +
+        '<div style="font-size:10px;color:var(--tx2);margin-top:4px">' + ((stats?.machine_count||0)>0?Math.round(((stats?.normal_count||0)/(stats?.machine_count||1))*100)+'% del total':'') + '</div>' +
+      '</div>' +
+    '</div>'
 
   document.getElementById('btn-add-zone').style.display = isAdmin() ? '' : 'none';
   const grid = document.getElementById('zone-grid');
@@ -1076,15 +1114,16 @@ async function loadDashboardExtra(zones, stats) {
         const col = cr > 0 ? 'var(--rd)' : al > 0 ? 'var(--yw)' : mc > 0 ? 'var(--gr)' : 'var(--tx3)';
         const bg = cr > 0 ? 'rgba(255,51,85,.08)' : al > 0 ? 'rgba(255,204,0,.08)' : 'rgba(0,255,136,.05)';
         const pct = mc > 0 ? Math.round(((cr+al)/mc)*100) : 0;
+        const okPct = mc > 0 ? Math.round((ok/mc)*100) : 0;
         return `<div onclick="goZone('${z.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;background:${bg};border:1px solid ${col}33;margin-bottom:6px;transition:all .2s" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
           <span style="font-size:20px">${z.icon||'🏭'}</span>
           <div style="flex:1;min-width:0">
             <div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${z.name}</div>
-            <div style="font-size:10px;color:var(--tx2);margin-top:2px">${mc} máquinas${cr?` · <span style="color:var(--rd)">${cr} críticas</span>`:''}${al?` · <span style="color:var(--yw)">${al} alertas</span>`:''}</div>
+            <div style="font-size:10px;color:var(--tx2);margin-top:2px">${mc} máq${cr?` · <span style="color:var(--rd)">${cr} crit</span>`:''}${al?` · <span style="color:var(--yw)">${al} alert</span>`:''}</div>
           </div>
           <div style="text-align:right">
             <div style="font-size:16px;font-weight:700;color:${col};font-family:var(--mono)">${cr+al > 0 ? cr+al : '✓'}</div>
-            ${mc>0?`<div style="font-size:9px;color:var(--tx2)">${pct}% KO</div>`:''}
+            <div style="font-size:9px;color:${pct>0?'var(--rd)':'var(--gr)'}">${mc>0?(pct>0?pct+'% KO':okPct+'% OK'):''}</div>
           </div>
         </div>`;
       }).join('');

@@ -68,8 +68,8 @@
       <button class="btn bp sm" id="btn-add-zone" onclick="openZoneModal()" style="display:none">+ Nueva zona</button>
     </div>
 
-    <!-- KPI CARDS -->
-    <div class="g3" style="margin-bottom:16px" id="gkpis"></div>
+    <!-- KPI CARDS: zona ocupa fila entera, los 3 siguientes en fila -->
+    <div style="margin-bottom:16px" id="gkpis"></div>
 
     <!-- HEATMAP + ACTIVITY -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px" id="dashboard-extra">
@@ -97,9 +97,20 @@
       </div>
     </div>
 
-    <!-- ZONES GRID -->
-    <div style="font-family:var(--mono);font-size:10px;color:var(--tx2);letter-spacing:2px;margin-bottom:10px">🏭 ZONAS DE LA FÁBRICA</div>
-    <div class="g4" id="zone-grid"></div>
+    <!-- ZONES GRID - hidden, only shown in separate zone list view -->
+    <div style="display:none" id="zone-grid"></div>
+  </div>
+
+  <!-- ZONE LIST (full page) -->
+  <div id="v-zone-list" class="view">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:20px;font-weight:700;color:#f1f5f9">🏭 Zonas de la fábrica</div>
+        <div style="font-size:12px;color:var(--tx2);margin-top:2px">Selecciona una zona para ver sus máquinas</div>
+      </div>
+      <button class="btn bp sm" id="btn-add-zone-list" onclick="openZoneModal()" style="display:none">+ Nueva zona</button>
+    </div>
+    <div class="g4" id="zone-list-grid"></div>
   </div>
 
   <!-- ZONE MACHINES -->
