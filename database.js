@@ -292,8 +292,7 @@ const Q = {
       LEFT JOIN machine_severity ms ON ms.machine_id=ma.id
     `);
     return r.rows[0];
-  }
-};
+  },
 
   // Maintenance notes
   getMaintenanceByMachine: async (machineId) => {
