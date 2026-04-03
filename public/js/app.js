@@ -1528,6 +1528,61 @@ function biSkipMachine() {
   else showBiSummary();
 }
 
+function biConfirmAll() {
+  // Auto-confirm ALL folders using default component assignment
+  const defaultComps = [
+    'Motor libre','Motor acoplado',
+    'Reductor entrada','Reductor salida',
+    'Rodamiento acoplado','Rodamiento libre',
+    'Rodamiento cola 01','Rodamiento cola 02'
+  ];
+
+  biConfirmed = [];
+  let totalMeas = 0;
+
+  biFolders.forEach(fd => {
+    const files = fd.files;
+    const pairs = [];
+    for(let i=0; i<files.length; i+=2) {
+      const compName = defaultComps[Math.floor(i/2)] || '— Saltar —';
+      if(compName === '— Saltar —') continue;
+      const dateMatch = files[i].name.match(/(\d{4})(\d{2})(\d{2})/);
+      const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : new Date().toISOString().slice(0,10);
+      pairs.push({ valImg: files[i], specImg: files[i+1]||null, compName, date });
+    }
+    if(pairs.length > 0) {
+      biConfirmed.push({ folderName: fd.folderName, pairs });
+      totalMeas += pairs.length;
+    }
+  });
+
+  toast(`✓ ${biConfirmed.length} máquinas confirmadas · ${totalMeas} mediciones`, 'ok');
+  showBiSummary();
+}
+
+function biConfirmAllWithComp(compName) {
+  // Confirm all folders assigning a SINGLE component to all images
+  biConfirmed = [];
+  let totalMeas = 0;
+
+  biFolders.forEach(fd => {
+    const files = fd.files;
+    const pairs = [];
+    for(let i=0; i<files.length; i+=2) {
+      const dateMatch = files[i].name.match(/(\d{4})(\d{2})(\d{2})/);
+      const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : new Date().toISOString().slice(0,10);
+      pairs.push({ valImg: files[i], specImg: files[i+1]||null, compName, date });
+    }
+    if(pairs.length > 0) {
+      biConfirmed.push({ folderName: fd.folderName, pairs });
+      totalMeas += pairs.length;
+    }
+  });
+
+  toast(`✓ ${biConfirmed.length} máquinas · ${totalMeas} mediciones (comp: ${compName})`, 'ok');
+  showBiSummary();
+}
+
 function updateModeUI() {
   const mode = document.querySelector('input[name="bi-mode"]:checked')?.value || 'fast';
   const totalMeas = biConfirmed.reduce((a,m) => a+m.pairs.length, 0);

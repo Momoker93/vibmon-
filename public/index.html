@@ -319,9 +319,34 @@
 
       <div id="bi-pairs-container" style="max-height:340px;overflow-y:auto"></div>
 
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="btn bp" id="bi-confirm-mac" onclick="biConfirmMachine()">✓ Confirmar esta máquina</button>
         <button class="btn bg xs" onclick="biSkipMachine()">Saltar máquina</button>
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn" style="background:rgba(0,212,255,.15);border:1px solid rgba(0,212,255,.4);color:var(--ac);font-size:11px;padding:6px 12px" onclick="biConfirmAll()" title="Asigna automáticamente los componentes por defecto a todas las carpetas">
+            ⚡ Confirmar TODAS automáticamente
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick single-component mode -->
+      <div style="margin-top:10px;padding:10px;background:var(--s2);border-radius:8px;border:1px solid var(--br)">
+        <div style="font-size:10px;color:var(--tx2);margin-bottom:8px;font-family:var(--mono)">MODO RÁPIDO — mismo componente para todas las carpetas</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="bi-single-comp" style="flex:1;background:var(--bg);border:1px solid var(--br);border-radius:6px;padding:6px 8px;color:var(--tx);font-size:12px">
+            <option value="">— Seleccionar componente —</option>
+            <option>Motor libre</option><option>Motor acoplado</option>
+            <option>Reductor entrada</option><option>Reductor salida</option>
+            <option>Rodamiento acoplado</option><option>Rodamiento libre</option>
+            <option>Rodamiento cola 01</option><option>Rodamiento cola 02</option>
+            <option>Chumacera intermedia</option><option>Acoplamiento</option>
+            <option>Ventilador</option><option>Bomba</option><option>Compresor</option>
+          </select>
+          <button class="btn bg sm" onclick="(function(){const c=document.getElementById('bi-single-comp').value;if(!c){toast('Selecciona un componente','err');return;}biConfirmAllWithComp(c);})()">
+            ✓ Aplicar a todas
+          </button>
+        </div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:6px">Útil cuando todas las carpetas son la misma máquina pero en fechas distintas, o todas tienen el mismo punto de medición.</div>
       </div>
     </div>
 
