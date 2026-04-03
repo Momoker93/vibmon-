@@ -1548,7 +1548,7 @@ function renderBiCurrentMachine() {
     const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : new Date().toISOString().slice(0,10);
     const defaultComp = existing?.pairs?.[i]?.compName || defaultComps[i] || '— Saltar —';
 
-    return `<div style="display:grid;grid-template-columns:80px 80px 1fr;gap:10px;align-items:center;padding:10px;border-bottom:1px solid var(--br2);border-radius:6px;margin-bottom:4px;background:var(--s2)" id="bi-pair-row-${i}">
+    return `<div style="display:grid;grid-template-columns:80px 80px 1fr 36px;gap:10px;align-items:center;padding:10px;border-bottom:1px solid var(--br2);border-radius:6px;margin-bottom:4px;background:var(--s2)" id="bi-pair-row-${i}">
       <div>
         <img src="${previewUrl}" style="width:76px;height:56px;object-fit:cover;border-radius:4px;border:1px solid var(--br);cursor:pointer" onclick="openLB('${previewUrl}')"/>
         <div style="font-size:9px;color:var(--tx2);margin-top:2px;text-align:center">${date}</div>
@@ -1564,12 +1564,36 @@ function renderBiCurrentMachine() {
           ${COMP_OPTIONS.map(c => `<option value="${c}" ${c===defaultComp?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
+      <div style="display:flex;align-items:center;justify-content:center">
+        <button onclick="biDeletePair(${i})" title="Eliminar esta medición" style="background:rgba(255,51,85,.15);border:1px solid rgba(255,51,85,.3);color:var(--rd);border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center">🗑</button>
+      </div>
     </div>`;
   }).join('');
 }
 
 function biPrevMachine() { if(biCurrentIdx>0){ biCurrentIdx--; renderBiCurrentMachine(); } }
 function biNextMachine() { if(biCurrentIdx<biFolders.length-1){ biCurrentIdx++; renderBiCurrentMachine(); } }
+
+function biDeletePair(pairIdx) {
+  const fd = biFolders[biCurrentIdx];
+  // Each pair is 2 files (val + spec), remove them from the files array
+  const fileIdx = pairIdx * 2;
+  fd.files.splice(fileIdx, fd.files[fileIdx+1] ? 2 : 1);
+  // Re-render
+  if(fd.files.length === 0) {
+    // No files left - remove this folder from the list
+    biFolders.splice(biCurrentIdx, 1);
+    if(biFolders.length === 0) {
+      document.getElementById('bi-step2').style.display = 'none';
+      document.getElementById('bi-step1').style.display = 'block';
+      toast('No quedan carpetas con imágenes');
+      return;
+    }
+    if(biCurrentIdx >= biFolders.length) biCurrentIdx = biFolders.length - 1;
+  }
+  renderBiCurrentMachine();
+  toast('Medición eliminada', 'ok');
+}
 
 function biConfirmMachine() {
   const fd = biFolders[biCurrentIdx];
