@@ -1441,48 +1441,58 @@ async function handleFolderDrop(event) {
   biZoneId = document.getElementById('bi-zone').value;
   if(!biZoneId) { toast('Selecciona la zona primero','err'); return; }
 
-  const items = Array.from(event.dataTransfer.items);
-  if(!items.length) { toast('No se detectaron elementos','err'); return; }
+  // CRITICAL: capture all entries SYNCHRONOUSLY before any await
+  // dataTransfer items become invalid after any async operation
+  const entries = [];
+  const items = event.dataTransfer.items;
+  for(let i = 0; i < items.length; i++) {
+    const entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
+    if(entry && entry.isDirectory) entries.push(entry);
+  }
 
-  toast('Leyendo carpetas...', 'ok');
-  const folders = {};
+  if(!entries.length) {
+    toast('No se detectaron carpetas. Arrastra carpetas, no archivos.','err');
+    return;
+  }
 
-  // Reads ALL files from a directory entry recursively (handles >100 files)
+  toast('Leyendo ' + entries.length + ' carpetas...', 'ok');
+
+  // Read all files from a directory entry (handles batches of 100)
   function readAllFiles(dirEntry) {
     return new Promise(resolve => {
       const reader = dirEntry.createReader();
       const allFiles = [];
       function readBatch() {
-        reader.readEntries(entries => {
-          if(!entries.length) { resolve(allFiles); return; }
-          const filePromises = entries.map(e => {
+        reader.readEntries(function(batch) {
+          if(!batch.length) { resolve(allFiles); return; }
+          let pending = 0;
+          batch.forEach(function(e) {
             if(e.isFile) {
-              return new Promise(r => e.file(f => {
+              pending++;
+              e.file(function(f) {
                 if(f.type.startsWith('image/')) allFiles.push(f);
-                r();
-              }));
+                pending--;
+                if(pending === 0) readBatch();
+              });
             }
-            return Promise.resolve();
           });
-          Promise.all(filePromises).then(readBatch);
-        }, () => resolve(allFiles));
+          if(pending === 0) readBatch();
+        }, function() { resolve(allFiles); });
       }
       readBatch();
     });
   }
 
-  // Process each dropped item
-  for(const item of items) {
-    const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
-    if(!entry) continue;
-    if(entry.isDirectory) {
-      const files = await readAllFiles(entry);
-      if(files.length) folders[entry.name] = files;
-    }
+  // Now process all entries async (entries are already captured)
+  const folders = {};
+  for(let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const files = await readAllFiles(entry);
+    if(files.length) folders[entry.name] = files;
   }
 
   if(!Object.keys(folders).length) {
-    toast('No se encontraron imágenes en las carpetas arrastradas','err');
+    toast('No se encontraron imágenes en las carpetas','err');
     return;
   }
 
