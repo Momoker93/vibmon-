@@ -255,37 +255,64 @@ function renderZones(zones, stats) {
     const now = new Date();
     dateEl.textContent = now.toLocaleDateString('es-ES', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
   }
-  document.getElementById('gkpis').innerHTML =
-    // Row 1: Zones header bar (clickable → opens zone list)
-    '<div class="card" onclick="openZoneList()" style="display:flex;align-items:center;gap:16px;padding:14px 20px;margin-bottom:12px;cursor:pointer;border-color:rgba(0,212,255,.2)">' +
-      '<span style="font-size:24px">🏭</span>' +
-      '<div style="flex:1">' +
-        '<div style="font-size:11px;font-family:var(--mono);color:var(--ac);letter-spacing:2px">ZONAS DE LA FÁBRICA</div>' +
-        '<div style="font-size:22px;font-weight:900;color:#f1f5f9;font-family:var(--mono)">' + (stats?.zone_count||0) + ' zonas · ' + (stats?.machine_count||0) + ' máquinas</div>' +
-      '</div>' +
-      '<div style="font-size:12px;color:var(--ac)">Ver todas →</div>' +
+  // Build KPIs using DOM to avoid onclick quote issues
+  const gkpis = document.getElementById('gkpis');
+  gkpis.innerHTML = '';
+
+  // Row 1: Zones header bar
+  const zonesBar = document.createElement('div');
+  zonesBar.className = 'card';
+  zonesBar.style.cssText = 'display:flex;align-items:center;gap:16px;padding:14px 20px;margin-bottom:12px;cursor:pointer;border-color:rgba(0,212,255,.2)';
+  zonesBar.innerHTML =
+    '<span style="font-size:24px">🏭</span>' +
+    '<div style="flex:1">' +
+      '<div style="font-size:11px;font-family:var(--mono);color:var(--ac);letter-spacing:2px">ZONAS DE LA FÁBRICA</div>' +
+      '<div style="font-size:22px;font-weight:900;color:#f1f5f9;font-family:var(--mono)">' + (stats?.zone_count||0) + ' zonas · ' + (stats?.machine_count||0) + ' máquinas</div>' +
     '</div>' +
-    // Row 2: 3 KPIs side by side
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">' +
-      '<div class="card kpi" onclick="showAlertList(\"critico\")" style="cursor:pointer;border-color:' + (stats?.critico_count?'rgba(255,51,85,.35)':'var(--br)') + '">' +
-        '<div style="font-size:26px;margin-bottom:4px">' + (stats?.critico_count>0?'🔴':'✅') + '</div>' +
-        '<div class="kpin" style="color:' + (stats?.critico_count?'var(--rd)':'var(--gr)') + '">' + (stats?.critico_count||0) + '</div>' +
-        '<div class="kpil">Críticas</div>' +
-        '<div style="font-size:10px;color:' + (stats?.critico_count?'var(--rd)':'var(--tx2)') + ';margin-top:4px">' + (stats?.critico_count>0?'Ver listado →':'Sin alertas críticas') + '</div>' +
-      '</div>' +
-      '<div class="card kpi" onclick="showAlertList(\"alerta\")" style="cursor:pointer;border-color:' + (stats?.alerta_count?'rgba(255,204,0,.35)':'var(--br)') + '">' +
-        '<div style="font-size:26px;margin-bottom:4px">' + (stats?.alerta_count>0?'⚠️':'✅') + '</div>' +
-        '<div class="kpin" style="color:' + (stats?.alerta_count?'var(--yw)':'var(--gr)') + '">' + (stats?.alerta_count||0) + '</div>' +
-        '<div class="kpil">En alerta</div>' +
-        '<div style="font-size:10px;color:' + (stats?.alerta_count?'var(--yw)':'var(--tx2)') + ';margin-top:4px">' + (stats?.alerta_count>0?'Ver listado →':'Sin alertas') + '</div>' +
-      '</div>' +
-      '<div class="card kpi" style="border-color:' + ((stats?.normal_count||0)>0?'rgba(0,255,136,.25)':'var(--br)') + '">' +
-        '<div style="font-size:26px;margin-bottom:4px">✅</div>' +
-        '<div class="kpin" style="color:var(--gr)">' + (stats?.normal_count||0) + '</div>' +
-        '<div class="kpil">En buen estado</div>' +
-        '<div style="font-size:10px;color:var(--tx2);margin-top:4px">' + ((stats?.machine_count||0)>0?Math.round(((stats?.normal_count||0)/(stats?.machine_count||1))*100)+'% del total':'') + '</div>' +
-      '</div>' +
-    '</div>'
+    '<div style="font-size:12px;color:var(--ac)">Ver todas →</div>';
+  zonesBar.addEventListener('click', openZoneList);
+  gkpis.appendChild(zonesBar);
+
+  // Row 2: 3 KPI cards
+  const row = document.createElement('div');
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px';
+
+  // Críticas
+  const kpiCrit = document.createElement('div');
+  kpiCrit.className = 'card kpi';
+  kpiCrit.style.cssText = 'cursor:pointer;border-color:' + (stats?.critico_count?'rgba(255,51,85,.35)':'var(--br)');
+  kpiCrit.innerHTML =
+    '<div style="font-size:26px;margin-bottom:4px">' + (stats?.critico_count>0?'🔴':'✅') + '</div>' +
+    '<div class="kpin" style="color:' + (stats?.critico_count?'var(--rd)':'var(--gr)') + '">' + (stats?.critico_count||0) + '</div>' +
+    '<div class="kpil">Críticas</div>' +
+    '<div style="font-size:10px;color:' + (stats?.critico_count?'var(--rd)':'var(--tx2)') + ';margin-top:4px">' + (stats?.critico_count>0?'Ver listado →':'Sin alertas críticas') + '</div>';
+  kpiCrit.addEventListener('click', () => showAlertList('critico'));
+  row.appendChild(kpiCrit);
+
+  // En alerta
+  const kpiAlert = document.createElement('div');
+  kpiAlert.className = 'card kpi';
+  kpiAlert.style.cssText = 'cursor:pointer;border-color:' + (stats?.alerta_count?'rgba(255,204,0,.35)':'var(--br)');
+  kpiAlert.innerHTML =
+    '<div style="font-size:26px;margin-bottom:4px">' + (stats?.alerta_count>0?'⚠️':'✅') + '</div>' +
+    '<div class="kpin" style="color:' + (stats?.alerta_count?'var(--yw)':'var(--gr)') + '">' + (stats?.alerta_count||0) + '</div>' +
+    '<div class="kpil">En alerta</div>' +
+    '<div style="font-size:10px;color:' + (stats?.alerta_count?'var(--yw)':'var(--tx2)') + ';margin-top:4px">' + (stats?.alerta_count>0?'Ver listado →':'Sin alertas') + '</div>';
+  kpiAlert.addEventListener('click', () => showAlertList('alerta'));
+  row.appendChild(kpiAlert);
+
+  // En buen estado
+  const kpiOk = document.createElement('div');
+  kpiOk.className = 'card kpi';
+  kpiOk.style.cssText = 'border-color:' + ((stats?.normal_count||0)>0?'rgba(0,255,136,.25)':'var(--br)');
+  kpiOk.innerHTML =
+    '<div style="font-size:26px;margin-bottom:4px">✅</div>' +
+    '<div class="kpin" style="color:var(--gr)">' + (stats?.normal_count||0) + '</div>' +
+    '<div class="kpil">En buen estado</div>' +
+    '<div style="font-size:10px;color:var(--tx2);margin-top:4px">' + ((stats?.machine_count||0)>0?Math.round(((stats?.normal_count||0)/(stats?.machine_count||1))*100)+'% del total':'') + '</div>';
+  row.appendChild(kpiOk);
+
+  gkpis.appendChild(row)
 
   document.getElementById('btn-add-zone').style.display = isAdmin() ? '' : 'none';
   const grid = document.getElementById('zone-grid');
