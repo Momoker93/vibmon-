@@ -616,10 +616,64 @@ async function goMachineById(id, push) {
     S.curMachine = fresh.find(m=>m.id===id)||mac;
   }
   renderMacKPIs();
-  renderCompTabs();
+  renderCompTabs(); // renders tabs hidden
+
+  // Load ALL component measurements in parallel before showing the view
+  const comps = S.curMachine.components || [];
+  if(comps.length) {
+    // Fetch all measurements simultaneously
+    const allMeasResults = await Promise.all(
+      comps.map(c => API.get('/components/'+c.id+'/measurements').catch(()=>[]))
+    );
+
+    // Build a map: compId -> measurements
+    const measMap = {};
+    comps.forEach((c, i) => { measMap[c.id] = allMeasResults[i]; });
+
+    // Show/hide tabs and set colors based on results
+    comps.forEach(c => {
+      const ms = measMap[c.id] || [];
+      const tab = document.getElementById('tab-'+c.id);
+      const panel = document.getElementById('panel-'+c.id);
+      if(!tab) return;
+      if(ms.length === 0) {
+        tab.style.display = 'none';
+        if(panel) panel.style.display = 'none';
+      } else {
+        tab.style.display = '';
+        tab.style.opacity = '1';
+        tab.style.fontStyle = 'normal';
+        const latest = ms.slice().sort((a,b)=>(b.measurement_date||b.date).localeCompare(a.measurement_date||a.date))[0];
+        tab.classList.remove('tc','ta');
+        if(latest.severity==='critico') tab.classList.add('tc');
+        else if(latest.severity==='alerta') tab.classList.add('ta');
+        const latestDate = latest.measurement_date || latest.date;
+        tab.title = 'Última: '+latestDate+' · '+ms.length+' medición'+(ms.length!==1?'es':'');
+      }
+    });
+
+    // Activate first visible component with its already-loaded measurements
+    const firstComp = comps.find(c => {
+      const t = document.getElementById('tab-'+c.id);
+      return t && t.style.display !== 'none';
+    });
+    if(firstComp) {
+      S.curComp = firstComp;
+      S.measurements = measMap[firstComp.id];
+      document.querySelectorAll('.ctab').forEach(t=>t.classList.remove('active'));
+      document.querySelectorAll('.cpanel').forEach(p=>p.classList.remove('active'));
+      const tab = document.getElementById('tab-'+firstComp.id);
+      const panel = document.getElementById('panel-'+firstComp.id);
+      if(tab) tab.classList.add('active');
+      if(panel) panel.classList.add('active');
+      renderLastMeasCard(firstComp.id);
+      renderCompCharts(firstComp.id);
+      renderHistory(firstComp.id);
+      updateMacKPIs();
+    }
+  }
+
   showView('v-machine', push);
-  if(S.curMachine.components?.length) activateComp(S.curMachine.components[0].id);
-  updateCompTabColors(); // async, updates in background
 }
 function goMachine() { if(S.curMachine) goMachineById(S.curMachine.id); }
 function renderMacKPIs() {
