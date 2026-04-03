@@ -285,19 +285,29 @@
     <!-- STEP 1: Select zone + folder -->
     <div id="bi-step1">
       <div style="background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--tx2);line-height:1.7">
-        <b style="color:var(--ac)">Flujo de trabajo:</b> Selecciona la zona → abre la carpeta raíz → asigna cada par de imágenes a su componente → importa todo de golpe.
+        <b style="color:var(--ac)">Flujo de trabajo:</b> Selecciona la zona → arrastra varias carpetas o abre la carpeta raíz → asigna componentes → importa todo de golpe.
       </div>
       <label class="lbl">Zona *</label>
       <select id="bi-zone">
         <option value="">— Seleccionar zona —</option>
       </select>
-      <label class="lbl" style="margin-top:12px">Carpeta raíz con subcarpetas de máquinas</label>
-      <div class="upz" onclick="document.getElementById('bi-folder').click()" style="padding:20px">
-        <div style="font-size:32px">📂</div>
-        <p style="font-size:13px;margin-top:6px"><b>Haz clic</b> y selecciona la carpeta que contiene las subcarpetas de cada máquina</p>
-        <p style="font-size:10px;margin-top:4px;color:var(--tx3)">Ej: abre "SECADERO 5" → detectará EC 212-1, EC 212-2, etc.</p>
+      <label class="lbl" style="margin-top:12px">Carpetas de máquinas</label>
+      <div id="bi-drop-zone" class="upz" style="padding:24px;border:2px dashed rgba(0,212,255,.3);transition:all .2s"
+        ondragover="event.preventDefault();this.style.borderColor='var(--ac)';this.style.background='rgba(0,212,255,.08)'"
+        ondragleave="this.style.borderColor='rgba(0,212,255,.3)';this.style.background=''"
+        ondrop="handleFolderDrop(event)">
+        <div style="font-size:36px">📂</div>
+        <p style="font-size:13px;margin-top:8px;font-weight:700">Arrastra aquí varias carpetas a la vez</p>
+        <p style="font-size:11px;margin-top:4px;color:var(--tx2)">Selecciona 10, 20 o las que quieras desde el explorador y suéltalas aquí</p>
+        <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <button class="btn bg sm" onclick="event.stopPropagation();document.getElementById('bi-folder-root').click()">
+            📁 O selecciona carpeta raíz
+          </button>
+        </div>
+        <p style="font-size:10px;margin-top:8px;color:var(--tx3)">Carpeta raíz: abre la carpeta que contiene las subcarpetas · Arrastrar: selecciona las carpetas directamente</p>
       </div>
-      <input type="file" id="bi-folder" webkitdirectory multiple style="display:none" onchange="handleFolderSelect(event)"/>
+      <!-- Root folder picker (old method) -->
+      <input type="file" id="bi-folder-root" webkitdirectory multiple style="display:none" onchange="handleFolderSelect(event)"/>
     </div>
 
     <!-- STEP 2: Assign pairs to components -->

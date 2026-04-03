@@ -1425,17 +1425,79 @@ function handleFolderSelect(evt) {
     if(f.type.startsWith('image/')) folders[key].push(f);
   });
 
+  processFolderMap(folders);
+  evt.target.value = '';
+}
+
+async function handleFolderDrop(event) {
+  event.preventDefault();
+  const dz = document.getElementById('bi-drop-zone');
+  if(dz) { dz.style.borderColor='rgba(0,212,255,.3)'; dz.style.background=''; }
+
+  biZoneId = document.getElementById('bi-zone').value;
+  if(!biZoneId) { toast('Selecciona la zona primero','err'); return; }
+
+  const items = Array.from(event.dataTransfer.items);
+  const folders = {};
+
+  // Read all dropped folders
+  const readFolder = (entry, folderName) => {
+    return new Promise(resolve => {
+      const reader = entry.createReader();
+      const files = [];
+      const readEntries = () => {
+        reader.readEntries(entries => {
+          if(!entries.length) { resolve(files); return; }
+          const promises = entries.map(e => {
+            if(e.isFile) {
+              return new Promise(r => e.file(f => {
+                if(f.type.startsWith('image/')) files.push(f);
+                r();
+              }));
+            }
+            return Promise.resolve();
+          });
+          Promise.all(promises).then(() => readEntries());
+        });
+      };
+      readEntries();
+    });
+  };
+
+  const promises = items.map(item => {
+    const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+    if(!entry) return Promise.resolve();
+    if(entry.isDirectory) {
+      return readFolder(entry, entry.name).then(files => {
+        if(files.length) folders[entry.name] = files;
+      });
+    }
+    return Promise.resolve();
+  });
+
+  await Promise.all(promises);
+
+  if(!Object.keys(folders).length) {
+    toast('No se detectaron carpetas con imágenes. Asegúrate de arrastrar carpetas, no archivos.','err');
+    return;
+  }
+
+  processFolderMap(folders);
+}
+
+function processFolderMap(folders) {
   biFolders = Object.entries(folders)
     .map(([name, fls]) => ({ folderName: name, files: fls.sort((a,b) => a.name.localeCompare(b.name)) }))
-    .filter(f => f.files.length >= 1);
+    .filter(f => f.files.length >= 1)
+    .sort((a,b) => a.folderName.localeCompare(b.folderName));
 
-  if(!biFolders.length) { toast('No se encontraron imágenes en las subcarpetas','err'); return; }
+  if(!biFolders.length) { toast('No se encontraron imágenes en las carpetas','err'); return; }
 
+  toast(`✓ ${biFolders.length} carpetas detectadas con ${biFolders.reduce((a,f)=>a+f.files.length,0)} imágenes`, 'ok');
   biCurrentIdx = 0;
   document.getElementById('bi-step1').style.display = 'none';
   document.getElementById('bi-step2').style.display = 'block';
   renderBiCurrentMachine();
-  evt.target.value = '';
 }
 
 function renderBiCurrentMachine() {
