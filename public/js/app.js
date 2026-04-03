@@ -1416,13 +1416,17 @@ function handleFolderSelect(evt) {
   const files = Array.from(evt.target.files);
   if(!files.length) return;
 
-  // Group by immediate subfolder
+  // Group by immediate subfolder (parts: [rootFolder, subFolder, file.jpg])
   const folders = {};
   files.forEach(f => {
+    if(!f.type.startsWith('image/')) return;
     const parts = f.webkitRelativePath.split('/');
+    // parts[0]=root, parts[1]=machine folder, parts[2]=file
+    // If depth=2 (root/file.jpg) -> use root as key
+    // If depth>=3 (root/machine/file.jpg) -> use machine as key
     const key = parts.length >= 3 ? parts[1] : parts[0];
     if(!folders[key]) folders[key] = [];
-    if(f.type.startsWith('image/')) folders[key].push(f);
+    folders[key].push(f);
   });
 
   processFolderMap(folders);
@@ -1438,47 +1442,47 @@ async function handleFolderDrop(event) {
   if(!biZoneId) { toast('Selecciona la zona primero','err'); return; }
 
   const items = Array.from(event.dataTransfer.items);
+  if(!items.length) { toast('No se detectaron elementos','err'); return; }
+
+  toast('Leyendo carpetas...', 'ok');
   const folders = {};
 
-  // Read all dropped folders
-  const readFolder = (entry, folderName) => {
+  // Reads ALL files from a directory entry recursively (handles >100 files)
+  function readAllFiles(dirEntry) {
     return new Promise(resolve => {
-      const reader = entry.createReader();
-      const files = [];
-      const readEntries = () => {
+      const reader = dirEntry.createReader();
+      const allFiles = [];
+      function readBatch() {
         reader.readEntries(entries => {
-          if(!entries.length) { resolve(files); return; }
-          const promises = entries.map(e => {
+          if(!entries.length) { resolve(allFiles); return; }
+          const filePromises = entries.map(e => {
             if(e.isFile) {
               return new Promise(r => e.file(f => {
-                if(f.type.startsWith('image/')) files.push(f);
+                if(f.type.startsWith('image/')) allFiles.push(f);
                 r();
               }));
             }
             return Promise.resolve();
           });
-          Promise.all(promises).then(() => readEntries());
-        });
-      };
-      readEntries();
+          Promise.all(filePromises).then(readBatch);
+        }, () => resolve(allFiles));
+      }
+      readBatch();
     });
-  };
+  }
 
-  const promises = items.map(item => {
+  // Process each dropped item
+  for(const item of items) {
     const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
-    if(!entry) return Promise.resolve();
+    if(!entry) continue;
     if(entry.isDirectory) {
-      return readFolder(entry, entry.name).then(files => {
-        if(files.length) folders[entry.name] = files;
-      });
+      const files = await readAllFiles(entry);
+      if(files.length) folders[entry.name] = files;
     }
-    return Promise.resolve();
-  });
-
-  await Promise.all(promises);
+  }
 
   if(!Object.keys(folders).length) {
-    toast('No se detectaron carpetas con imágenes. Asegúrate de arrastrar carpetas, no archivos.','err');
+    toast('No se encontraron imágenes en las carpetas arrastradas','err');
     return;
   }
 
