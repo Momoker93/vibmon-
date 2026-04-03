@@ -71,6 +71,17 @@ async function initDB() {
         mime_type TEXT DEFAULT 'image/jpeg',
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS maintenance_notes (
+        id TEXT PRIMARY KEY,
+        machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        type TEXT DEFAULT 'revision',
+        technician TEXT DEFAULT '',
+        description TEXT NOT NULL,
+        created_by TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
     `);
 
     // Safe migrations
@@ -281,6 +292,31 @@ const Q = {
       LEFT JOIN machine_severity ms ON ms.machine_id=ma.id
     `);
     return r.rows[0];
+  }
+};
+
+  // Maintenance notes
+  getMaintenanceByMachine: async (machineId) => {
+    const r = await pool.query(
+      'SELECT * FROM maintenance_notes WHERE machine_id=$1 ORDER BY date DESC, created_at DESC',
+      [machineId]
+    );
+    return r.rows;
+  },
+  insertMaintenance: async (id, machineId, date, type, technician, description, createdBy) => {
+    await pool.query(
+      'INSERT INTO maintenance_notes (id,machine_id,date,type,technician,description,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [id, machineId, date, type, technician, description, createdBy]
+    );
+  },
+  updateMaintenance: async (date, type, technician, description, id) => {
+    await pool.query(
+      'UPDATE maintenance_notes SET date=$1,type=$2,technician=$3,description=$4 WHERE id=$5',
+      [date, type, technician, description, id]
+    );
+  },
+  deleteMaintenance: async (id) => {
+    await pool.query('DELETE FROM maintenance_notes WHERE id=$1', [id]);
   }
 };
 

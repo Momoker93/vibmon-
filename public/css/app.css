@@ -271,3 +271,21 @@ body.light .upz:hover { background: rgba(0,102,204,.04); }
 body.light #loading { background: #f0f4f8; }
 body.light .loading-logo { color: var(--ac); }
 body.light body::before { display: none; }
+
+/* ── FIELD MODE ──────────────────────────────────────────────────────────── */
+body.field .card { padding: 14px 12px; }
+body.field .ctab { font-size: 13px; padding: 10px 16px; min-height: 44px; }
+body.field .btn { min-height: 44px; font-size: 13px; padding: 10px 18px; }
+body.field .btn.xs { min-height: 38px; font-size: 12px; padding: 8px 14px; }
+body.field .btn.sm { min-height: 40px; font-size: 12px; padding: 9px 16px; }
+body.field input, body.field select, body.field textarea { font-size: 15px; padding: 11px 12px; min-height: 44px; }
+body.field .xyz-val { font-size: 32px; }
+body.field .xyz-grid { gap: 8px; }
+body.field .hr { padding: 12px 10px; min-height: 56px; }
+body.field .kpin { font-size: 28px; }
+body.field #hdr { padding: 10px 16px; }
+body.field #hdr-r .btn:not(#btn-field):not(#btn-theme):not(#btn-cfg) { display: none !important; }
+body.field .card-title { font-size: 11px; }
+body.field #comp-tabs { gap: 8px; }
+body.field .zcard { padding: 18px; }
+body.field #btn-field { background: rgba(0,212,255,.2); border-color: var(--ac); color: var(--ac); }

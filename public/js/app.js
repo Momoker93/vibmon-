@@ -674,6 +674,8 @@ async function goMachineById(id, push) {
   }
 
   showView('v-machine', push);
+  // Load maintenance notes
+  loadMaintenance(id);
 }
 function goMachine() { if(S.curMachine) goMachineById(S.curMachine.id); }
 function renderMacKPIs() {
@@ -1893,6 +1895,113 @@ async function analyzeAI(cid) {
 // ── LIGHTBOX ──────────────────────────────────────────────────────────────────
 function openLB(src){document.getElementById('lb-img').src=src;openModal('mlb');}
 
+// ── FIELD MODE ───────────────────────────────────────────────────────────────
+function toggleFieldMode() {
+  const isField = document.body.classList.toggle('field');
+  localStorage.setItem('vibmon_field', isField ? '1' : '0');
+  const btn = document.getElementById('btn-field');
+  if(btn) {
+    btn.title = isField ? 'Desactivar modo campo' : 'Activar modo técnico de campo';
+  }
+  if(isField) toast('🔧 Modo técnico de campo activado','ok');
+  else toast('Modo estándar activado');
+}
+
+function initFieldMode() {
+  const saved = localStorage.getItem('vibmon_field');
+  if(saved === '1') {
+    document.body.classList.add('field');
+  }
+}
+
+// ── MAINTENANCE NOTES ─────────────────────────────────────────────────────────
+let S_editMaint = null;
+
+async function loadMaintenance(machineId) {
+  const list = document.getElementById('maint-list');
+  const addBtn = document.getElementById('btn-add-maint');
+  if(addBtn) addBtn.style.display = isAdmin() ? '' : 'none';
+  try {
+    const notes = await API.get('/machines/'+machineId+'/maintenance');
+    if(!notes.length) {
+      list.innerHTML = '<p style="color:var(--tx2);font-size:12px;text-align:center;padding:12px">Sin notas de mantenimiento</p>';
+      return;
+    }
+    const typeLabel = { revision:'🔍 Revisión', reparacion:'🔨 Reparación', cambio:'🔩 Cambio de pieza', ajuste:'⚙ Ajuste', limpieza:'🧹 Limpieza', otro:'📝 Otro' };
+    list.innerHTML = notes.map(n => {
+      const tl = typeLabel[n.type] || n.type;
+      return '<div class="hr" style="align-items:flex-start;gap:10px">' +
+        '<div style="flex:1">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">' +
+            '<span style="font-size:12px;font-weight:700;color:var(--ac)">' + n.date + '</span>' +
+            '<span style="font-size:11px;color:var(--tx2)">' + relDate(n.date) + '</span>' +
+            '<span style="font-size:10px;background:var(--s2);border:1px solid var(--br);border-radius:20px;padding:2px 8px">' + tl + '</span>' +
+            (n.technician ? '<span style="font-size:10px;color:var(--tx2)">👤 ' + n.technician + '</span>' : '') +
+          '</div>' +
+          '<div style="font-size:13px;color:var(--tx);line-height:1.5">' + n.description + '</div>' +
+          '<div style="font-size:10px;color:var(--tx3);margin-top:4px">Registrado por: ' + n.created_by + '</div>' +
+        '</div>' +
+        (isAdmin() ? '<button class="btn bg xs" style="flex-shrink:0" onclick="openEditMaint('+JSON.stringify(n)+')">✏</button>' : '') +
+      '</div>';
+    }).join('');
+  } catch(e) { list.innerHTML = '<p style="color:var(--rd);font-size:12px;padding:8px">Error al cargar notas</p>'; }
+}
+
+function openAddMaint() {
+  S_editMaint = null;
+  document.getElementById('mmaint-title').childNodes[0].textContent = '+ NOTA DE MANTENIMIENTO ';
+  document.getElementById('maint-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('maint-type').value = 'revision';
+  document.getElementById('maint-tech').value = '';
+  document.getElementById('maint-desc').value = '';
+  document.getElementById('maint-del').style.display = 'none';
+  openModal('mmaint');
+}
+
+function openEditMaint(note) {
+  S_editMaint = note;
+  document.getElementById('mmaint-title').childNodes[0].textContent = '✏ EDITAR NOTA ';
+  document.getElementById('maint-date').value = note.date;
+  document.getElementById('maint-type').value = note.type || 'revision';
+  document.getElementById('maint-tech').value = note.technician || '';
+  document.getElementById('maint-desc').value = note.description;
+  document.getElementById('maint-del').style.display = '';
+  openModal('mmaint');
+}
+
+async function saveMaint() {
+  const date = document.getElementById('maint-date').value;
+  const desc = document.getElementById('maint-desc').value.trim();
+  if(!date || !desc) { toast('Fecha y descripción obligatorias','err'); return; }
+  const body = {
+    date, description: desc,
+    type: document.getElementById('maint-type').value,
+    technician: document.getElementById('maint-tech').value.trim()
+  };
+  try {
+    if(S_editMaint) {
+      await API.put('/maintenance/'+S_editMaint.id, body);
+      toast('✓ Nota actualizada');
+    } else {
+      await API.post('/machines/'+S.curMachine.id+'/maintenance', body);
+      toast('✓ Nota guardada');
+    }
+    closeModal('mmaint');
+    loadMaintenance(S.curMachine.id);
+  } catch(e) { toast(e.message,'err'); }
+}
+
+async function deleteMaint() {
+  if(!S_editMaint) return;
+  if(!confirm('¿Eliminar esta nota de mantenimiento?')) return;
+  try {
+    await API.del('/maintenance/'+S_editMaint.id);
+    toast('Nota eliminada');
+    closeModal('mmaint');
+    loadMaintenance(S.curMachine.id);
+  } catch(e) { toast(e.message,'err'); }
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
 
 // ── THEME TOGGLE ──────────────────────────────────────────────────────────────
@@ -1912,4 +2021,4 @@ function initTheme() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => { initTheme(); APP.init(); });
+document.addEventListener('DOMContentLoaded', () => { initTheme(); initFieldMode(); APP.init(); });

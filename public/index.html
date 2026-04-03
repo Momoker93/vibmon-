@@ -48,6 +48,7 @@
     <button class="btn bg sm" id="btn-exp" onclick="exportData()">↓ Export</button>
     <button class="btn bp sm" id="btn-bulk" onclick="openBulkImport()" style="display:none">📦 Import masivo</button>
     <button class="btn bg sm" id="btn-imp" onclick="importData()">↑ Import</button>
+    <button class="btn bg sm" id="btn-field" onclick="toggleFieldMode()" title="Modo técnico de campo">🔧</button>
     <button class="btn bg sm" id="btn-theme" onclick="toggleTheme()" title="Cambiar tema">🌙</button>
     <button class="btn bg sm" id="btn-cfg" onclick="openModal('mcfg')">⚙</button>
     <button class="btn bg sm" onclick="logout()">Salir</button>
@@ -121,6 +122,7 @@
         <div style="font-size:12px;color:var(--tx2);margin-top:2px" id="zone-desc"></div>
       </div>
       <div class="row">
+        <button class="btn bgr sm" id="btn-zone-pdf" onclick="window.open('/api/zones/'+S.curZone.id+'/pdf','_blank')">📄 PDF zona</button>
         <button class="btn bw sm" id="btn-edit-zone" onclick="openZoneModal(S.curZone)" style="display:none">✏ Editar zona</button>
         <button class="btn bp sm" id="btn-add-mac" onclick="openAddMachine()" style="display:none">+ Añadir máquina</button>
       </div>
@@ -136,6 +138,17 @@
     </div>
     <div class="card" id="mac-info"></div>
     <div class="g3" id="mac-kpis" style="margin-bottom:13px"></div>
+    <!-- MAINTENANCE NOTES -->
+    <div id="maint-section" style="margin-bottom:13px">
+      <div class="card">
+        <div class="card-title">🔧 Notas de mantenimiento
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn bp xs" id="btn-add-maint" onclick="openAddMaint()" style="display:none">+ Añadir nota</button>
+          </div>
+        </div>
+        <div id="maint-list"><p style="color:var(--tx2);font-size:12px;text-align:center;padding:12px">Sin notas de mantenimiento</p></div>
+      </div>
+    </div>
     <div class="ctabs" id="comp-tabs"></div>
     <div id="comp-panels"></div>
   </div>
@@ -163,6 +176,35 @@
     <div style="margin-top:16px;display:flex;gap:8px">
       <button class="btn bp" onclick="saveCFG()">💾 Cambiar contraseña</button>
       <button class="btn bg" onclick="closeModal('mcfg')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAINTENANCE NOTE -->
+<div class="mov" id="mmaint">
+  <div class="mbox" style="max-width:480px">
+    <div class="mtitle" id="mmaint-title">+ NOTA DE MANTENIMIENTO <button class="btn bg xs" onclick="closeModal('mmaint')">✕</button></div>
+    <div class="g2">
+      <div><label class="lbl">📅 Fecha *</label><input type="date" id="maint-date"/></div>
+      <div><label class="lbl">Tipo</label>
+        <select id="maint-type">
+          <option value="revision">🔍 Revisión</option>
+          <option value="reparacion">🔨 Reparación</option>
+          <option value="cambio">🔩 Cambio de pieza</option>
+          <option value="ajuste">⚙ Ajuste / Alineación</option>
+          <option value="limpieza">🧹 Limpieza</option>
+          <option value="otro">📝 Otro</option>
+        </select>
+      </div>
+    </div>
+    <label class="lbl">Técnico responsable</label>
+    <input id="maint-tech" placeholder="Nombre del técnico"/>
+    <label class="lbl">Descripción *</label>
+    <textarea id="maint-desc" placeholder="Describe el trabajo realizado, piezas cambiadas, observaciones..." style="min-height:90px"></textarea>
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bp" onclick="saveMaint()">💾 Guardar nota</button>
+      <button class="btn bg" onclick="closeModal('mmaint')">Cancelar</button>
+      <button class="btn bd sm" id="maint-del" style="display:none;margin-left:auto" onclick="deleteMaint()">🗑 Eliminar</button>
     </div>
   </div>
 </div>

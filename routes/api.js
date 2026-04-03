@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const { Q } = require('../database');
+const { Q, pool } = require('../database');
 const { signToken, requireAuth, requireAdmin, optionalAuth } = require('../middleware/auth');
 const { upload, deleteImage } = require('../cloudinary');
 
@@ -403,6 +403,153 @@ Responde SOLO con JSON válido sin markdown:
     res.json(JSON.parse(text));
   } catch(e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ── MAINTENANCE NOTES ────────────────────────────────────────────────────────
+router.get('/machines/:id/maintenance', optionalAuth, async (req, res) => {
+  try {
+    res.json(await Q.getMaintenanceByMachine(req.params.id));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/machines/:id/maintenance', requireAdmin, async (req, res) => {
+  try {
+    const { date, type, technician, description } = req.body;
+    if (!date || !description) return res.status(400).json({ error: 'Fecha y descripción obligatorias' });
+    const id = uid();
+    await Q.insertMaintenance(id, req.params.id, date, type || 'revision', technician || '', description, req.user.username);
+    res.json({ id, machine_id: req.params.id, date, type, technician, description });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/maintenance/:id', requireAdmin, async (req, res) => {
+  try {
+    const { date, type, technician, description } = req.body;
+    await Q.updateMaintenance(date, type || 'revision', technician || '', description, req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/maintenance/:id', requireAdmin, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM maintenance_notes WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PDF ZONE FULL REPORT ──────────────────────────────────────────────────────
+router.get('/zones/:id/pdf', optionalAuth, async (req, res) => {
+  try {
+    const PDFDocument = require('pdfkit');
+    const zone = await Q.getZone(req.params.id);
+    if (!zone) return res.status(404).json({ error: 'Zona no encontrada' });
+    const machines = await Q.getMachinesByZone(zone.id);
+    const SEVCOL = { normal: '#00aa55', alerta: '#cc8800', critico: '#cc1133' };
+    const SEVLBL = { normal: 'Normal', alerta: 'Alerta', critico: 'Crítico' };
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="vibmon_zona_' + zone.id + '.pdf"');
+    doc.pipe(res);
+
+    // Cover page
+    doc.rect(0, 0, 595, 842).fill('#05080f');
+    doc.fontSize(32).fillColor('#00d4ff').font('Helvetica-Bold').text('VIBMON', 50, 100);
+    doc.fontSize(16).fillColor('#fff').font('Helvetica').text('Informe de Zona — ' + zone.name, 50, 145);
+    doc.fontSize(12).fillColor('#5a7a9a').text('Generado: ' + new Date().toLocaleString('es-ES'), 50, 175);
+    doc.fontSize(12).fillColor('#5a7a9a').text(machines.length + ' máquinas en esta zona', 50, 195);
+
+    for (const mac of machines) {
+      doc.addPage();
+      const components = await Q.getComponentsByMachine(mac.id);
+      const maintenance = await Q.getMaintenanceByMachine(mac.id);
+
+      // Machine header
+      doc.rect(0, 0, 595, 55).fill('#0a1020');
+      doc.fontSize(16).fillColor('#00d4ff').font('Helvetica-Bold').text((mac.icon||'⚙')+' '+mac.name, 50, 14);
+      const macInfo = [mac.type, mac.rpm ? mac.rpm+' RPM' : null].filter(Boolean).join(' · ');
+      doc.fontSize(10).fillColor('#5a7a9a').font('Helvetica').text(macInfo || 'Sin especificaciones', 50, 35);
+
+      let y = 70;
+
+      // Maintenance notes
+      if (maintenance.length) {
+        doc.fontSize(11).fillColor('#00d4ff').font('Helvetica-Bold').text('🔧 Notas de Mantenimiento', 50, y); y += 18;
+        for (const n of maintenance.slice(0, 5)) {
+          if (y > 700) { doc.addPage(); y = 50; }
+          const typeLabel = { revision: 'Revisión', reparacion: 'Reparación', cambio: 'Cambio de pieza', ajuste: 'Ajuste', limpieza: 'Limpieza', otro: 'Otro' }[n.type] || n.type;
+          doc.rect(50, y, 490, 38).fill('#0d1a2e').stroke('#1a3050');
+          doc.fontSize(9).fillColor('#00d4ff').font('Helvetica-Bold').text(n.date + ' · ' + typeLabel, 58, y+6);
+          if(n.technician) doc.fillColor('#5a7a9a').text('Técnico: '+n.technician, 400, y+6);
+          doc.fontSize(9).fillColor('#ccc').font('Helvetica').text(n.description, 58, y+20, { width: 470, ellipsis: true });
+          y += 46;
+        }
+        y += 8;
+      }
+
+      // Components and measurements
+      for (const comp of components) {
+        const ms = await Q.getMeasurementsByComponent(comp.id);
+        if (!ms.length) continue;
+        if (y > 680) { doc.addPage(); y = 50; }
+
+        doc.fontSize(11).fillColor('#ffffff').font('Helvetica-Bold').text('🔩 '+comp.name, 50, y); y += 18;
+
+        // Last measurement highlighted
+        const last = ms[0];
+        const sev = last.severity || 'normal';
+        const maxV = Math.max(parseFloat(last.vx)||0, parseFloat(last.vy)||0, parseFloat(last.vz)||0);
+        doc.rect(50, y, 490, 52).fill('#0d1a2e').stroke(SEVCOL[sev]||'#00aa55');
+        doc.fontSize(9).fillColor('#5a7a9a').font('Helvetica').text('ÚLTIMA MEDICIÓN', 58, y+6);
+        doc.fontSize(9).fillColor('#fff').text(last.date, 160, y+6);
+        doc.roundedRect(420, y+3, 70, 16, 3).fill(SEVCOL[sev]||'#00aa55');
+        doc.fontSize(8).fillColor('#fff').font('Helvetica-Bold').text(SEVLBL[sev]||sev, 426, y+7);
+        doc.fontSize(10).fillColor('#0088bb').font('Helvetica-Bold').text('X: '+(last.vx!=null?parseFloat(last.vx).toFixed(2):'—'), 58, y+26);
+        doc.fillColor('#7744cc').text('Y: '+(last.vy!=null?parseFloat(last.vy).toFixed(2):'—'), 150, y+26);
+        doc.fillColor('#00aa55').text('Z: '+(last.vz!=null?parseFloat(last.vz).toFixed(2):'—'), 242, y+26);
+        doc.fontSize(9).fillColor('#5a7a9a').font('Helvetica').text('Max: '+maxV.toFixed(2)+' mm/s', 340, y+28);
+        if(last.fault_type) doc.fillColor('#ffaa44').text(last.fault_type, 58, y+40);
+        y += 60;
+
+        // AI analysis if available
+        const lastWithAI = ms.find(m => m.ai_result && m.ai_result.trim());
+        if (lastWithAI && lastWithAI.ai_result) {
+          if (y > 650) { doc.addPage(); y = 50; }
+          doc.rect(50, y, 490, 14).fill('#0a1428');
+          doc.fontSize(8).fillColor('#4499ff').font('Helvetica-Bold').text('ANÁLISIS IA', 58, y+3); y += 16;
+          const aiText = lastWithAI.ai_result.substring(0, 500) + (lastWithAI.ai_result.length > 500 ? '...' : '');
+          const aiHeight = Math.min(Math.ceil(aiText.length / 90) * 12 + 12, 120);
+          doc.rect(50, y, 490, aiHeight).fill('#080e1c').stroke('#1a2a4a');
+          doc.fontSize(8).fillColor('#aac4e0').font('Helvetica').text(aiText, 58, y+6, { width: 474, height: aiHeight-10 });
+          y += aiHeight + 8;
+        }
+
+        // Measurement history (last 5)
+        if (ms.length > 1) {
+          if (y > 700) { doc.addPage(); y = 50; }
+          doc.fontSize(9).fillColor('#5a7a9a').font('Helvetica').text('Historial reciente ('+Math.min(ms.length,5)+'/'+ms.length+')', 50, y); y += 14;
+          for (const m of ms.slice(1, 6)) {
+            if (y > 750) break;
+            const mv = Math.max(parseFloat(m.vx)||0, parseFloat(m.vy)||0, parseFloat(m.vz)||0);
+            const sc = SEVCOL[m.severity]||'#00aa55';
+            doc.rect(50, y, 3, 16).fill(sc);
+            doc.fontSize(8).fillColor('#aaa').font('Helvetica').text(m.date, 58, y+3);
+            doc.fillColor('#0088bb').text('X:'+( m.vx!=null?parseFloat(m.vx).toFixed(1):'—'), 130, y+3);
+            doc.fillColor('#7744cc').text('Y:'+(m.vy!=null?parseFloat(m.vy).toFixed(1):'—'), 180, y+3);
+            doc.fillColor('#00aa55').text('Z:'+(m.vz!=null?parseFloat(m.vz).toFixed(1):'—'), 230, y+3);
+            doc.fontSize(8).fillColor(sc).text(SEVLBL[m.severity]||m.severity, 285, y+3);
+            if(m.fault_type) doc.fillColor('#ffaa44').text(m.fault_type.substring(0,35), 340, y+3);
+            y += 18;
+          }
+        }
+        y += 10;
+      }
+    }
+
+    doc.end();
+  } catch(e) {
+    if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
 
