@@ -673,6 +673,9 @@ async function goMachineById(id, push) {
     }
   }
 
+  // Clear global last meas while loading
+  const glb = document.getElementById('mac-last-meas-global');
+  if(glb) glb.innerHTML = '';
   showView('v-machine', push);
   // Load maintenance notes
   loadMaintenance(id);
@@ -739,7 +742,7 @@ function buildPanel(c, mac) {
   return `<div class="cpanel" id="panel-${c.id}">
     <div style="font-family:var(--mono);font-size:11px;color:var(--ac);letter-spacing:1px;margin-bottom:12px">🔩 ${c.name.toUpperCase()}</div>
 
-    <!-- ÚLTIMA MEDICIÓN destacada -->
+    <!-- ÚLTIMA MEDICIÓN (mostrada globalmente arriba, este slot ya no se usa visualmente) -->
     <div id="last-meas-${c.id}" style="display:none"></div>
 
     <!-- GRÁFICAS en desplegable -->
@@ -889,8 +892,10 @@ async function activateComp(cid) {
 }
 
 function renderLastMeasCard(cid) {
+  // Render into both the panel slot and the global top slot
   const el = document.getElementById('last-meas-'+cid);
-  if(!el) return;
+  const globalEl = document.getElementById('mac-last-meas-global');
+  if(!el && !globalEl) return;
   const ms = [...S.measurements].sort((a,b) => {
     const da = a.measurement_date || a.date;
     const db = b.measurement_date || b.date;
@@ -905,8 +910,7 @@ function renderLastMeasCard(cid) {
   const uploadHtml = (!sameDay && uploadedAt) ? '<div style="font-size:9px;color:var(--tx3);margin-top:3px">Subida: '+uploadedAt+'</div>' : '';
   const faultHtml = m.fault_type ? '<div style="margin-top:8px;font-size:11px;color:var(--tx2)">'+m.fault_type+'</div>' : '';
   const tempVal = m.temperature!=null ? parseFloat(m.temperature).toFixed(1)+'\u00b0C' : '\u2014';
-  el.style.display = 'block';
-  el.innerHTML =
+  const cardHtml =
     '<div class="card" style="border-left:3px solid '+(SEV[m.severity]?.c||'var(--gr)')+';margin-bottom:12px;cursor:pointer" onclick="renderMeasDetail(\'' +m.id+ '\')">' +
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">' +
         '<div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:1px">ULTIMA MEDICION</div>' +
@@ -929,6 +933,11 @@ function renderLastMeasCard(cid) {
       faultHtml +
       '<div style="text-align:right;margin-top:8px;font-size:10px;color:var(--tx3)">Ver detalle completo</div>' +
     '</div>';
+
+  // Render in panel slot (hidden, for internal use)
+  if(el) { el.style.display = 'block'; el.innerHTML = cardHtml; }
+  // Render in global top slot (always visible)
+  if(globalEl) { globalEl.innerHTML = cardHtml; }
 }
 function updateMacKPIs() {
   const allMs = S.measurements;
@@ -1499,6 +1508,97 @@ async function handleFolderDrop(event) {
   processFolderMap(folders);
 }
 
+function setBiImportMode(mode) {
+  document.getElementById('bi-import-mode').value = mode;
+  document.getElementById('bi-mode-new-label').style.borderColor = mode==='new' ? 'var(--ac)' : 'var(--br)';
+  document.getElementById('bi-mode-new-label').style.background = mode==='new' ? 'rgba(0,212,255,.05)' : '';
+  document.getElementById('bi-mode-add-label').style.borderColor = mode==='add' ? 'var(--ac)' : 'var(--br)';
+  document.getElementById('bi-mode-add-label').style.background = mode==='add' ? 'rgba(0,212,255,.05)' : '';
+}
+
+async function renderMatchList() {
+  // Load existing machines for selected zone
+  const machines = await API.get('/zones/'+biZoneId+'/machines');
+  S.machines = machines;
+  machines.forEach(m => DB_machines[m.id] = m);
+
+  const list = document.getElementById('bi-match-list');
+  list.innerHTML = biFolders.map((fd, i) => {
+    // Auto-match by name similarity
+    const normalize = s => s.toLowerCase().replace(/[\s\-_\.]/g,'');
+    const match = machines.find(m =>
+      normalize(m.name) === normalize(fd.folderName) ||
+      normalize(fd.folderName).includes(normalize(m.name)) ||
+      normalize(m.name).includes(normalize(fd.folderName))
+    );
+
+    const opts = machines.map(m =>
+      '<option value="'+m.id+'"'+(match&&match.id===m.id?' selected':'')+'>'+m.name+'</option>'
+    ).join('');
+
+    const imgs = fd.files.length;
+    const pairs = Math.ceil(imgs/2);
+    return '<div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid var(--br);border-radius:8px;margin-bottom:8px;background:var(--s2)">' +
+      '<div>' +
+        '<div style="font-size:13px;font-weight:700;color:#f1f5f9">📂 '+fd.folderName+'</div>' +
+        '<div style="font-size:11px;color:var(--tx2);margin-top:3px">'+imgs+' imágenes · '+pairs+' pares</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        (match ? '<span style="font-size:10px;color:var(--gr)">✓ auto</span>' : '<span style="font-size:10px;color:var(--yw)">⚠ manual</span>') +
+        '<select id="bi-match-'+i+'" style="background:var(--bg);border:1px solid var(--br);border-radius:6px;padding:6px 8px;color:var(--tx);font-size:12px;min-width:200px">' +
+          '<option value="">— Saltar esta carpeta —</option>' +
+          opts +
+        '</select>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function biConfirmMatches() {
+  // Build biConfirmed with machine IDs instead of creating new ones
+  const defaultComps = [
+    'Motor libre','Motor acoplado',
+    'Reductor entrada','Reductor salida',
+    'Rodamiento acoplado','Rodamiento libre',
+    'Rodamiento cola 01','Rodamiento cola 02'
+  ];
+
+  biConfirmed = [];
+  biFolders.forEach((fd, i) => {
+    const macId = document.getElementById('bi-match-'+i)?.value;
+    if(!macId) return; // skip
+    const files = fd.files;
+    const pairs = [];
+    for(let j=0; j<files.length; j+=2) {
+      const pairIdx = Math.floor(j/2);
+      const compName = defaultComps[pairIdx] || '— Saltar —';
+      if(compName === '— Saltar —') continue;
+      const dateMatch = files[j].name.match(/(\d{4})(\d{2})(\d{2})/);
+      const date = dateMatch ? dateMatch[1]+'-'+dateMatch[2]+'-'+dateMatch[3] : new Date().toISOString().slice(0,10);
+      pairs.push({ valImg: files[j], specImg: files[j+1]||null, compName, date });
+    }
+    if(pairs.length > 0) {
+      biConfirmed.push({ folderName: fd.folderName, existingMachineId: macId, pairs });
+    }
+  });
+
+  if(!biConfirmed.length) { toast('No hay carpetas asignadas a máquinas','err'); return; }
+
+  // Go straight to step 2 for component assignment (reuse existing flow)
+  biCurrentIdx = 0;
+  document.getElementById('bi-step2b').style.display = 'none';
+
+  // Override biFolders order to match confirmed
+  biFolders = biConfirmed.map(c => ({
+    folderName: c.folderName,
+    files: c.pairs.flatMap(p => p.specImg ? [p.valImg, p.specImg] : [p.valImg])
+  }));
+  biConfirmed = []; // reset, will be re-confirmed in step2
+
+  document.getElementById('bi-step2').style.display = 'block';
+  renderBiCurrentMachine();
+}
+
 function processFolderMap(folders) {
   biFolders = Object.entries(folders)
     .map(([name, fls]) => ({ folderName: name, files: fls.sort((a,b) => a.name.localeCompare(b.name)) }))
@@ -1507,11 +1607,20 @@ function processFolderMap(folders) {
 
   if(!biFolders.length) { toast('No se encontraron imágenes en las carpetas','err'); return; }
 
-  toast(`✓ ${biFolders.length} carpetas detectadas con ${biFolders.reduce((a,f)=>a+f.files.length,0)} imágenes`, 'ok');
+  const mode = document.getElementById('bi-import-mode').value;
+  toast('✓ '+biFolders.length+' carpetas detectadas', 'ok');
   biCurrentIdx = 0;
   document.getElementById('bi-step1').style.display = 'none';
-  document.getElementById('bi-step2').style.display = 'block';
-  renderBiCurrentMachine();
+
+  if(mode === 'add') {
+    // Segunda ronda: show machine matching step
+    document.getElementById('bi-step2b').style.display = 'block';
+    renderMatchList();
+  } else {
+    // Primera vez: assign components
+    document.getElementById('bi-step2').style.display = 'block';
+    renderBiCurrentMachine();
+  }
 }
 
 function renderBiCurrentMachine() {
@@ -1738,10 +1847,12 @@ async function startMultiFolderImport() {
     addLog(`\n📁 ${macData.folderName}`);
 
     // Find or create machine
-    let mac = zoneMachines.find(m =>
-      m.name.toLowerCase() === macData.folderName.toLowerCase() ||
-      m.name.toLowerCase().replace(/[\s-]/g,'') === macData.folderName.toLowerCase().replace(/[\s-]/g,'')
-    );
+    let mac = macData.existingMachineId
+      ? zoneMachines.find(m => m.id === macData.existingMachineId)
+      : zoneMachines.find(m =>
+          m.name.toLowerCase() === macData.folderName.toLowerCase() ||
+          m.name.toLowerCase().replace(/[\s-]/g,'') === macData.folderName.toLowerCase().replace(/[\s-]/g,'')
+        );
 
     if(!mac) {
       // Get unique component names from this machine's pairs

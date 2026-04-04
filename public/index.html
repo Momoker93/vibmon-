@@ -132,14 +132,27 @@
 
   <!-- MACHINE -->
   <div id="v-machine" class="view">
+    <!-- 1. HEADER: nombre + acciones -->
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <div style="font-size:18px;font-weight:700;color:#f1f5f9" id="mac-title"></div>
       <div class="row" id="mac-actions"></div>
     </div>
-    <div class="card" id="mac-info"></div>
+
+    <!-- 2. INFO: tipo, RPM, zona, notas -->
+    <div class="card" id="mac-info" style="margin-bottom:13px"></div>
+
+    <!-- 3. ÚLTIMA MEDICIÓN GLOBAL (del componente activo) -->
+    <div id="mac-last-meas-global" style="margin-bottom:13px"></div>
+
+    <!-- 4. KPIs de mediciones -->
     <div class="g3" id="mac-kpis" style="margin-bottom:13px"></div>
-    <!-- MAINTENANCE NOTES -->
-    <div id="maint-section" style="margin-bottom:13px">
+
+    <!-- 5. PESTAÑAS Y PANELES DE COMPONENTES -->
+    <div class="ctabs" id="comp-tabs"></div>
+    <div id="comp-panels"></div>
+
+    <!-- 6. NOTAS DE MANTENIMIENTO (al final) -->
+    <div id="maint-section" style="margin-top:16px;margin-bottom:13px">
       <div class="card">
         <div class="card-title">🔧 Notas de mantenimiento
           <div style="margin-left:auto;display:flex;gap:6px">
@@ -149,8 +162,6 @@
         <div id="maint-list"><p style="color:var(--tx2);font-size:12px;text-align:center;padding:12px">Sin notas de mantenimiento</p></div>
       </div>
     </div>
-    <div class="ctabs" id="comp-tabs"></div>
-    <div id="comp-panels"></div>
   </div>
 
   <!-- MEASUREMENT DETAIL -->
@@ -284,9 +295,20 @@
 
     <!-- STEP 1: Select zone + folder -->
     <div id="bi-step1">
-      <div style="background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:var(--tx2);line-height:1.7">
-        <b style="color:var(--ac)">Flujo de trabajo:</b> Selecciona la zona → arrastra varias carpetas o abre la carpeta raíz → asigna componentes → importa todo de golpe.
+      <!-- MODE SELECTOR -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+        <div id="bi-mode-new-label" onclick="setBiImportMode('new')" style="border:2px solid var(--ac);border-radius:10px;padding:14px;cursor:pointer;background:rgba(0,212,255,.05)">
+          <div style="font-size:20px;margin-bottom:6px">🆕</div>
+          <div style="font-size:12px;font-weight:700;color:#f1f5f9">Primera vez</div>
+          <div style="font-size:11px;color:var(--tx2);margin-top:4px">Crea máquinas nuevas y añade las mediciones</div>
+        </div>
+        <div id="bi-mode-add-label" onclick="setBiImportMode('add')" style="border:2px solid var(--br);border-radius:10px;padding:14px;cursor:pointer">
+          <div style="font-size:20px;margin-bottom:6px">➕</div>
+          <div style="font-size:12px;font-weight:700;color:#f1f5f9">Segunda ronda</div>
+          <div style="font-size:11px;color:var(--tx2);margin-top:4px">Añade mediciones a máquinas ya existentes</div>
+        </div>
       </div>
+      <input type="hidden" id="bi-import-mode" value="new"/>
       <label class="lbl">Zona *</label>
       <select id="bi-zone">
         <option value="">— Seleccionar zona —</option>
@@ -308,6 +330,17 @@
       </div>
       <!-- Root folder picker (old method) -->
       <input type="file" id="bi-folder-root" webkitdirectory multiple style="display:none" onchange="handleFolderSelect(event)"/>
+    </div>
+
+    <!-- STEP 2b: Match folders to existing machines (segunda ronda) -->
+    <div id="bi-step2b" style="display:none">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px;margin-bottom:12px">ASIGNA CADA CARPETA A SU MÁQUINA</div>
+      <div style="font-size:12px;color:var(--tx2);margin-bottom:12px">Cada carpeta detectada se vincula automáticamente por nombre. Corrígelo si es necesario.</div>
+      <div id="bi-match-list" style="max-height:380px;overflow-y:auto"></div>
+      <div style="margin-top:14px;display:flex;gap:8px">
+        <button class="btn bp" onclick="biConfirmMatches()">✓ Confirmar y continuar</button>
+        <button class="btn bg xs" onclick="resetBulk();document.getElementById('bi-step2b').style.display='none';document.getElementById('bi-step1').style.display='block'">← Volver</button>
+      </div>
     </div>
 
     <!-- STEP 2: Assign pairs to components -->
