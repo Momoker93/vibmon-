@@ -166,15 +166,36 @@ const Q = {
   // Machines
   getMachinesByZone: async (zoneId) => {
     const r = await pool.query(`
+      WITH latest_per_comp AS (
+        SELECT DISTINCT ON (component_id)
+          machine_id, component_id, vx, vy, vz, date, severity
+        FROM measurements
+        ORDER BY component_id, date DESC, created_at DESC
+      ),
+      machine_stats AS (
+        SELECT
+          machine_id,
+          MAX(CASE WHEN severity='critico' THEN 2 WHEN severity='alerta' THEN 1 ELSE 0 END) as worst_num,
+          MAX(date) as last_date,
+          (array_agg(vx ORDER BY date DESC))[1] as last_vx,
+          (array_agg(vy ORDER BY date DESC))[1] as last_vy,
+          (array_agg(vz ORDER BY date DESC))[1] as last_vz
+        FROM latest_per_comp
+        GROUP BY machine_id
+      ),
+      last_maintenance AS (
+        SELECT DISTINCT ON (machine_id)
+          machine_id, date as maint_date, type as maint_type, description as maint_desc
+        FROM maintenance_notes
+        ORDER BY machine_id, date DESC, created_at DESC
+      )
       SELECT ma.*,
-        m.vx as last_vx, m.vy as last_vy, m.vz as last_vz,
-        m.date as last_date, m.severity as worst_severity
+        CASE WHEN ms.worst_num=2 THEN 'critico' WHEN ms.worst_num=1 THEN 'alerta' ELSE 'normal' END as worst_severity,
+        ms.last_date, ms.last_vx, ms.last_vy, ms.last_vz,
+        lm.maint_date, lm.maint_type, lm.maint_desc
       FROM machines ma
-      LEFT JOIN LATERAL (
-        SELECT vx,vy,vz,date,severity FROM measurements
-        WHERE machine_id=ma.id
-        ORDER BY date DESC, created_at DESC LIMIT 1
-      ) m ON true
+      LEFT JOIN machine_stats ms ON ms.machine_id=ma.id
+      LEFT JOIN last_maintenance lm ON lm.machine_id=ma.id
       WHERE ma.zone_id=$1
       ORDER BY ma.name
     `, [zoneId]);

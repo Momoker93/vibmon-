@@ -441,7 +441,11 @@ function renderMacGrid() {
   grid.innerHTML = S.machines.map(mac => {
     const comps = mac.components?.length||0;
     const sevClass = mac.worst_severity === 'critico' ? 'sc' : mac.worst_severity === 'alerta' ? 'sa' : '';
-    return `<div class="mcard ${sevClass}" onclick="goMachineById('${mac.id}')">
+    const maintTypeLabel = { revision:'Revisión', reparacion:'Reparación', cambio:'🔩 Cambio de pieza', ajuste:'Ajuste', limpieza:'Limpieza', otro:'Nota' };
+    const maintLabel = mac.maint_type ? (maintTypeLabel[mac.maint_type]||mac.maint_type) : '';
+    const isRecentChange = mac.maint_type === 'cambio' || mac.maint_type === 'reparacion';
+
+    return `<div class="mcard ${sevClass}" onclick="goMachineById('${mac.id}')" style="${isRecentChange ? 'border-top: 3px solid var(--yw);' : ''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
         <div style="display:flex;align-items:center;gap:7px;flex:1;margin-right:6px">
           <span style="font-size:22px">${mac.icon||'⚙'}</span>
@@ -463,6 +467,10 @@ function renderMacGrid() {
         <span style="color:var(--tx3);font-size:9px"> mm/s</span>
       </div>` : ''}
       <div style="font-size:10px;color:var(--tx3)">${comps} componente${comps!==1?'s':''} · ${mac.last_date||'Sin mediciones'}</div>
+      ${mac.maint_date ? `
+      <div style="margin-top:6px;padding:4px 7px;border-radius:5px;background:${isRecentChange?'rgba(255,204,0,.08)':'var(--s2)'};border:1px solid ${isRecentChange?'rgba(255,204,0,.25)':'var(--br2)'}">
+        <span style="font-size:10px;color:${isRecentChange?'var(--yw)':'var(--tx2)'}">🔧 ${maintLabel} · ${mac.maint_date}</span>
+      </div>` : ''}
     </div>`;
   }).join('');
 }
