@@ -172,16 +172,19 @@ const Q = {
         FROM measurements
         ORDER BY component_id, date DESC, created_at DESC
       ),
-      machine_stats AS (
+      machine_worst AS (
         SELECT
           machine_id,
           MAX(CASE WHEN severity='critico' THEN 2 WHEN severity='alerta' THEN 1 ELSE 0 END) as worst_num,
-          MAX(date) as last_date,
-          (array_agg(vx ORDER BY date DESC))[1] as last_vx,
-          (array_agg(vy ORDER BY date DESC))[1] as last_vy,
-          (array_agg(vz ORDER BY date DESC))[1] as last_vz
+          MAX(date) as last_date
         FROM latest_per_comp
         GROUP BY machine_id
+      ),
+      machine_last_meas AS (
+        SELECT DISTINCT ON (m.machine_id)
+          m.machine_id, m.vx as last_vx, m.vy as last_vy, m.vz as last_vz
+        FROM measurements m
+        ORDER BY m.machine_id, m.date DESC, m.created_at DESC
       ),
       last_maintenance AS (
         SELECT DISTINCT ON (machine_id)
@@ -190,11 +193,13 @@ const Q = {
         ORDER BY machine_id, date DESC, created_at DESC
       )
       SELECT ma.*,
-        CASE WHEN ms.worst_num=2 THEN 'critico' WHEN ms.worst_num=1 THEN 'alerta' ELSE 'normal' END as worst_severity,
-        ms.last_date, ms.last_vx, ms.last_vy, ms.last_vz,
+        CASE WHEN mw.worst_num=2 THEN 'critico' WHEN mw.worst_num=1 THEN 'alerta' WHEN mw.worst_num=0 THEN 'normal' ELSE NULL END as worst_severity,
+        mw.last_date,
+        mlm.last_vx, mlm.last_vy, mlm.last_vz,
         lm.maint_date, lm.maint_type, lm.maint_desc
       FROM machines ma
-      LEFT JOIN machine_stats ms ON ms.machine_id=ma.id
+      LEFT JOIN machine_worst mw ON mw.machine_id=ma.id
+      LEFT JOIN machine_last_meas mlm ON mlm.machine_id=ma.id
       LEFT JOIN last_maintenance lm ON lm.machine_id=ma.id
       WHERE ma.zone_id=$1
       ORDER BY ma.name

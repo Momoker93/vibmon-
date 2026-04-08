@@ -123,6 +123,7 @@
       </div>
       <div class="row">
         <button class="btn bgr sm" id="btn-zone-pdf" onclick="window.open('/api/zones/'+S.curZone.id+'/pdf','_blank')">📄 PDF zona</button>
+        <button class="btn bai sm" id="btn-zone-ai" onclick="goZoneAI()">🤖 Análisis IA zona</button>
         <button class="btn bw sm" id="btn-edit-zone" onclick="openZoneModal(S.curZone)" style="display:none">✏ Editar zona</button>
         <button class="btn bp sm" id="btn-add-mac" onclick="openAddMachine()" style="display:none">+ Añadir máquina</button>
       </div>
@@ -147,8 +148,10 @@
     <!-- 4. KPIs de mediciones -->
     <div class="g3" id="mac-kpis" style="margin-bottom:13px"></div>
 
-    <!-- 5. PESTAÑAS Y PANELES DE COMPONENTES -->
-    <div class="ctabs" id="comp-tabs"></div>
+    <!-- 5. SELECTOR DE COMPONENTE (pestañas) -->
+    <div class="ctabs" id="comp-tabs" style="margin-bottom:13px"></div>
+
+    <!-- 6. PANELES DE COMPONENTE -->
     <div id="comp-panels"></div>
 
     <!-- 6. NOTAS DE MANTENIMIENTO (al final) -->
@@ -162,6 +165,27 @@
         <div id="maint-list"><p style="color:var(--tx2);font-size:12px;text-align:center;padding:12px">Sin notas de mantenimiento</p></div>
       </div>
     </div>
+  </div>
+
+  <!-- ZONE AI ANALYSIS -->
+  <div id="v-zone-ai" class="view">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:20px;font-weight:700;color:#f1f5f9">🤖 Análisis IA — <span id="zone-ai-title"></span></div>
+        <div style="font-size:12px;color:var(--tx2);margin-top:2px">Analiza todas las mediciones sin análisis previo</div>
+      </div>
+      <button class="btn bp sm" id="btn-start-zone-ai" onclick="startZoneAIAnalysis()">▶ Iniciar análisis</button>
+    </div>
+    <div id="zone-ai-progress" style="display:none;margin-bottom:16px">
+      <div class="card">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--ac);letter-spacing:2px;margin-bottom:8px">PROGRESO</div>
+        <div style="background:var(--s2);border-radius:4px;height:8px;overflow:hidden;margin-bottom:8px">
+          <div id="zone-ai-bar" style="background:var(--ac);height:100%;width:0%;transition:width .3s;border-radius:4px"></div>
+        </div>
+        <div id="zone-ai-status" style="font-size:11px;color:var(--tx2)">Preparando...</div>
+      </div>
+    </div>
+    <div id="zone-ai-list"></div>
   </div>
 
   <!-- MEASUREMENT DETAIL -->

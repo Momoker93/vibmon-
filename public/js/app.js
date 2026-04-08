@@ -87,6 +87,8 @@ window.addEventListener('popstate', function(e) {
     goZones(false);
   } else if (view === 'v-zone-list') {
     openZoneList();
+  } else if (view === 'v-zone-ai') {
+    goZoneAI();
   } else if (view === 'v-zone' && curZone) {
     goZone(curZone, false);
   } else if (view === 'v-machine' && curMachine) {
@@ -2168,6 +2170,133 @@ async function analyzeAI(cid) {
 
 // ── LIGHTBOX ──────────────────────────────────────────────────────────────────
 function openLB(src){document.getElementById('lb-img').src=src;openModal('mlb');}
+
+// ── ZONE AI ANALYSIS ─────────────────────────────────────────────────────────
+async function goZoneAI() {
+  showView('v-zone-ai', true);
+  document.getElementById('zone-ai-title').textContent = S.curZone?.name || 'Zona';
+  document.getElementById('zone-ai-progress').style.display = 'none';
+  document.getElementById('btn-start-zone-ai').style.display = '';
+
+  const listEl = document.getElementById('zone-ai-list');
+  listEl.innerHTML = '<p style="color:var(--tx2);font-size:12px;text-align:center;padding:24px">Cargando mediciones sin análisis...</p>';
+
+  try {
+    // Load all machines in zone
+    const machines = await API.get('/zones/' + S.curZone.id + '/machines');
+    const pending = []; // {machine, comp, measurement}
+
+    for(const mac of machines) {
+      if(!mac.components?.length) continue;
+      for(const comp of mac.components) {
+        const ms = await API.get('/components/' + comp.id + '/measurements');
+        const withImages = ms.filter(m => m.images?.length && !m.ai_result?.trim());
+        withImages.forEach(m => pending.push({ mac, comp, meas: m }));
+      }
+    }
+
+    if(!pending.length) {
+      listEl.innerHTML = '<div style="text-align:center;padding:32px"><div style="font-size:40px;margin-bottom:12px">✅</div><p style="color:var(--tx2)">Todas las mediciones con imágenes ya tienen análisis IA.</p></div>';
+      document.getElementById('btn-start-zone-ai').style.display = 'none';
+      return;
+    }
+
+    // Store pending globally for the analysis
+    window._zoneAIPending = pending;
+
+    listEl.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--tx2);letter-spacing:2px;margin-bottom:12px">' +
+      pending.length + ' MEDICIONES SIN ANÁLISIS</div>' +
+      pending.map((p, i) => {
+        const thumb = p.meas.images?.[0] ? '<img src="'+p.meas.images[0]+'" style="width:48px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0"/>' : '<div style="width:48px;height:36px;background:var(--s2);border-radius:4px;flex-shrink:0"></div>';
+        return '<div id="zone-ai-row-'+i+'" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--br);border-radius:8px;margin-bottom:6px;background:var(--s2)">' +
+          thumb +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-size:12px;font-weight:700">' + p.mac.name + ' › ' + p.comp.name + '</div>' +
+            '<div style="font-size:10px;color:var(--tx2)">' + p.meas.date + ' · ' + (p.meas.images?.length||0) + ' imágenes</div>' +
+          '</div>' +
+          '<div id="zone-ai-status-'+i+'" style="font-size:10px;color:var(--tx3)">Pendiente</div>' +
+        '</div>';
+      }).join('');
+  } catch(e) {
+    listEl.innerHTML = '<p style="color:var(--rd);padding:16px">' + e.message + '</p>';
+  }
+}
+
+async function startZoneAIAnalysis() {
+  const pending = window._zoneAIPending;
+  if(!pending?.length) return;
+
+  document.getElementById('btn-start-zone-ai').style.display = 'none';
+  document.getElementById('zone-ai-progress').style.display = 'block';
+  const bar = document.getElementById('zone-ai-bar');
+  const statusEl = document.getElementById('zone-ai-status');
+
+  let done = 0;
+  const toB64 = f => new Promise((res, rej) => {
+    const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(f);
+  });
+
+  for(let i = 0; i < pending.length; i++) {
+    const { mac, comp, meas } = pending[i];
+    const rowStatus = document.getElementById('zone-ai-status-'+i);
+    const row = document.getElementById('zone-ai-row-'+i);
+
+    if(rowStatus) rowStatus.innerHTML = '<span style="color:var(--ac)">⏳ Analizando...</span>';
+    statusEl.textContent = (i+1) + '/' + pending.length + ' — ' + mac.name + ' › ' + comp.name;
+    bar.style.width = Math.round((i/pending.length)*100) + '%';
+
+    try {
+      const imgs = meas.images.slice(0, 2); // max 2 images
+      const aiRes = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API._token },
+        body: JSON.stringify({
+          images: imgs,
+          machineName: mac.name,
+          machineType: mac.type,
+          machineRpm: mac.rpm,
+          compName: comp.name
+        })
+      });
+      const ai = await aiRes.json();
+
+      if(ai.error) throw new Error(ai.error);
+
+      // Build ai_result text
+      const aiResult = 'Diagnóstico: ' + ai.diagnostico + '\nFalla: ' + ai.tipoFalla + '\nSeveridad: ' + (ai.severidadSugerida||'').toUpperCase() + '\n\n' + ai.explicacion + '\n\nAcción: ' + ai.accionRecomendada;
+
+      // Update measurement with AI result and extracted values
+      const updateBody = {
+        date: meas.date,
+        point: meas.point || '',
+        vx: ai.vxDetectado && ai.vxDetectado !== 'null' ? parseFloat(ai.vxDetectado).toFixed(2) : (meas.vx || ''),
+        vy: ai.vyDetectado && ai.vyDetectado !== 'null' ? parseFloat(ai.vyDetectado).toFixed(2) : (meas.vy || ''),
+        vz: ai.vzDetectado && ai.vzDetectado !== 'null' ? parseFloat(ai.vzDetectado).toFixed(2) : (meas.vz || ''),
+        temperature: ai.temperaturaDetectada && ai.temperaturaDetectada !== 'null' ? parseFloat(ai.temperaturaDetectada).toFixed(1) : (meas.temperature || ''),
+        severity: ai.severidadSugerida || meas.severity || 'normal',
+        fault_type: ai.tipoFalla || meas.fault_type || '',
+        notes: meas.notes || '',
+        ai_result: aiResult
+      };
+      await API.put('/measurements/' + meas.id, updateBody);
+
+      done++;
+      if(row) row.style.borderColor = 'rgba(0,255,136,.3)';
+      if(rowStatus) rowStatus.innerHTML = '<span style="color:var(--gr)">✅ Listo</span>';
+    } catch(e) {
+      if(row) row.style.borderColor = 'rgba(255,51,85,.3)';
+      if(rowStatus) rowStatus.innerHTML = '<span style="color:var(--rd)">❌ ' + e.message.substring(0,30) + '</span>';
+    }
+
+    bar.style.width = Math.round(((i+1)/pending.length)*100) + '%';
+    // Small delay to avoid rate limits
+    await new Promise(r => setTimeout(r, 800));
+  }
+
+  statusEl.textContent = '✅ Completado: ' + done + '/' + pending.length + ' analizadas';
+  bar.style.background = 'var(--gr)';
+  toast('✅ Análisis completado: ' + done + ' mediciones', 'ok');
+}
 
 // ── FIELD MODE ───────────────────────────────────────────────────────────────
 function toggleFieldMode() {
