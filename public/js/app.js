@@ -2302,8 +2302,8 @@ async function startZoneAIAnalysis() {
     }
 
     bar.style.width = Math.round(((i+1)/pending.length)*100) + '%';
-    // Small delay to avoid rate limits
-    await new Promise(r => setTimeout(r, 800));
+    // Delay between requests to avoid API rate limits
+    await new Promise(r => setTimeout(r, 2000));
   }
 
   statusEl.textContent = '✅ Completado: ' + done + '/' + pending.length + ' analizadas';

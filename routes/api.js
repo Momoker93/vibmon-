@@ -372,31 +372,41 @@ Responde SOLO con JSON válido sin markdown:
     const https = require('https');
     const body = JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 900,
+      max_tokens: 1500,
       messages: [{ role: 'user', content: [...imgContents, { type: 'text', text: prompt }] }]
     });
 
-    const result = await new Promise(function(resolve, reject) {
-      const options = {
-        hostname: 'api.anthropic.com',
-        path: '/v1/messages',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'Content-Length': Buffer.byteLength(body)
-        }
-      };
-      const req2 = https.request(options, function(r) {
-        let data = '';
-        r.on('data', function(chunk) { data += chunk; });
-        r.on('end', function() { resolve(JSON.parse(data)); });
+    // Retry up to 3 times on overload
+    let result = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 3000 * attempt)); // wait 3s, 6s
+      result = await new Promise(function(resolve, reject) {
+        const options = {
+          hostname: 'api.anthropic.com',
+          path: '/v1/messages',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Length': Buffer.byteLength(body)
+          }
+        };
+        const req2 = https.request(options, function(r) {
+          let data = '';
+          r.on('data', function(chunk) { data += chunk; });
+          r.on('end', function() {
+            try { resolve(JSON.parse(data)); }
+            catch(e) { reject(new Error('JSON parse error: ' + data.substring(0, 100))); }
+          });
+        });
+        req2.on('error', reject);
+        req2.write(body);
+        req2.end();
       });
-      req2.on('error', reject);
-      req2.write(body);
-      req2.end();
-    });
+      // Break if not overloaded
+      if (!result.error || result.error.type !== 'overloaded_error') break;
+    }
 
     if (result.error) return res.status(400).json({ error: result.error.message });
     const text = result.content.map(function(c) { return c.text || ''; }).join('').replace(/```json|```/g, '').trim();
