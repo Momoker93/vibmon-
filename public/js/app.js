@@ -2246,7 +2246,20 @@ async function startZoneAIAnalysis() {
     bar.style.width = Math.round((i/pending.length)*100) + '%';
 
     try {
-      const imgs = meas.images.slice(0, 2); // max 2 images
+      // Convert image URLs to base64 (API requires base64, not URLs)
+      const imgUrls = meas.images.slice(0, 2);
+      const imgs = await Promise.all(imgUrls.map(async url => {
+        const fullUrl = url.startsWith('http') ? url : window.location.origin + url;
+        const resp = await fetch(fullUrl);
+        const blob = await resp.blob();
+        return new Promise((res, rej) => {
+          const reader = new FileReader();
+          reader.onload = e => res(e.target.result);
+          reader.onerror = rej;
+          reader.readAsDataURL(blob);
+        });
+      }));
+
       const aiRes = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API._token },
