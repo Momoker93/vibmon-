@@ -12,7 +12,17 @@ const API = {
     if (body && !isFormData) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
     if (body && isFormData) { opts.body = body; }
     const res = await fetch('/api' + path, opts);
-    if (res.status === 401 && localStorage.getItem('vibmon_token')) { APP.logout(); return; }
+    if (res.status === 401) {
+      // Token expired - refresh the page to re-login instead of silent logout
+      const stored = localStorage.getItem('vibmon_token');
+      if(stored) {
+        // Clear token and show message
+        localStorage.removeItem('vibmon_token');
+        alert('Tu sesión ha expirado. Por favor inicia sesión de nuevo.\nLos datos ya guardados se conservan.');
+        location.reload();
+        return;
+      }
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Error del servidor');
     return data;
